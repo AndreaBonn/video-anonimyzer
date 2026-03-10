@@ -1,0 +1,113 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+
+# ===========================
+# Modelli AI (grandi, scaricabili)
+# ===========================
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+*.mlmodel
+*.weights
+
+# ===========================
+# Video e media (pesanti)
+# ===========================
+*.mp4
+*.m4v
+*.mov
+*.avi
+*.mkv
+*.webm
+*.wmv
+*.flv
+*.ts
+
+# Immagini di output (non sorgenti)
+input/
+output/
+
+# ===========================
+# Credenziali e segreti
+# ===========================
+.env
+.env.*
+*.env
+!.env.example
+credentials.*
+**/secrets/
+*-credentials.json
+*_credentials.json
+serviceAccountKey*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Firebase
+firebase-debug.log
+.firebaserc
+firebase.json
+
+# ===========================
+# IDE e editor
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+desktop.ini
+.Spotlight-V100
+.Trashes
+
+# ===========================
+# Claude Code (settings locali)
+# ===========================
+.claude/settings.local.json
+
+# ===========================
+# File temporanei e log
+# ===========================
+*.tmp
+*.bak
+*.log
+*.cache
+
+# ===========================
+# Report e annotazioni di output
+# ===========================
+*_report.csv
+*_annotations.json
+
+docs/
+doc-progetto/
