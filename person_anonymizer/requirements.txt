@@ -3,3 +3,4 @@ opencv-python==4.13.0.92
 ffmpeg-python==0.2.0
 tqdm==4.67.3
 numpy==2.4.2
+flask==3.1.0

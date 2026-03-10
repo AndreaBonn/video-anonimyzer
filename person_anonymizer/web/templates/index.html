@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Anonymizer v7.1</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+    <h1>Person Anonymizer <span class="version">v7.1</span></h1>
+    <span class="header-subtitle">Oscuramento automatico persone in video di sorveglianza</span>
+</header>
+
+<!-- Main Layout -->
+<main class="layout">
+
+    <!-- Pannello Sinistro: Configurazione -->
+    <aside class="panel panel-config">
+
+        <!-- Upload Video -->
+        <section class="card">
+            <h2 class="card-title">Video di Input</h2>
+            <div id="dropzone" class="dropzone">
+                <div class="dropzone-content">
+                    <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p>Trascina un video qui</p>
+                    <p class="dropzone-hint">oppure clicca per selezionare</p>
+                    <p class="dropzone-formats">MP4, MOV, AVI, MKV, WEBM, M4V</p>
+                </div>
+                <input type="file" id="fileInput" accept=".mp4,.m4v,.mov,.avi,.mkv,.webm" hidden>
+            </div>
+            <div id="fileInfo" class="file-info hidden">
+                <span id="fileName" class="file-name"></span>
+                <span id="fileSize" class="file-size"></span>
+                <button id="removeFile" class="btn-icon" title="Rimuovi">&times;</button>
+            </div>
+        </section>
+
+        <!-- Impostazioni Base -->
+        <section class="card">
+            <h2 class="card-title collapsible" data-target="section-base">
+                Impostazioni Base
+                <span class="chevron">&#9662;</span>
+            </h2>
+            <div id="section-base" class="card-body">
+
+                <div class="form-group">
+                    <label>Modalità operativa</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="operation_mode" value="auto" checked>
+                            <span>Automatica</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="operation_mode" value="manual">
+                            <span>Manuale (salva JSON per review CLI)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Metodo di oscuramento</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="anonymization_method" value="pixelation" checked>
+                            <span>Pixelation</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="anonymization_method" value="blur">
+                            <span>Blur</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="anonymization_intensity">
+                        Intensità oscuramento: <span class="value-display" id="val-intensity">10</span>
+                    </label>
+                    <input type="range" id="anonymization_intensity" min="2" max="50" value="10" step="1">
+                </div>
+
+                <div class="form-group">
+                    <label for="person_padding">
+                        Padding persona (px): <span class="value-display" id="val-padding">15</span>
+                    </label>
+                    <input type="range" id="person_padding" min="0" max="60" value="15" step="1">
+                </div>
+            </div>
+        </section>
+
+        <!-- Rilevamento -->
+        <section class="card">
+            <h2 class="card-title collapsible" data-target="section-detection">
+                Rilevamento
+                <span class="chevron">&#9662;</span>
+            </h2>
+            <div id="section-detection" class="card-body">
+
+                <div class="form-group">
+                    <label for="yolo_model">Modello YOLO</label>
+                    <select id="yolo_model">
+                        <option value="yolov8x.pt">YOLOv8x (accurato, lento)</option>
+                        <option value="yolov8n.pt">YOLOv8n (veloce, meno accurato)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="detection_confidence">
+                        Confidenza rilevamento: <span class="value-display" id="val-confidence">0.20</span>
+                    </label>
+                    <input type="range" id="detection_confidence" min="0.05" max="0.95" value="0.20" step="0.05">
+                </div>
+
+                <div class="form-group">
+                    <label for="nms_iou_threshold">
+                        NMS IoU threshold: <span class="value-display" id="val-nms">0.55</span>
+                    </label>
+                    <input type="range" id="nms_iou_threshold" min="0.1" max="0.9" value="0.55" step="0.05">
+                </div>
+            </div>
+        </section>
+
+        <!-- Funzionalità Avanzate -->
+        <section class="card">
+            <h2 class="card-title collapsible" data-target="section-advanced">
+                Funzionalità Avanzate
+                <span class="chevron">&#9662;</span>
+            </h2>
+            <div id="section-advanced" class="card-body">
+
+                <div class="toggle-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_sliding_window" checked>
+                        <span class="toggle-switch"></span>
+                        Sliding Window
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_tracking" checked>
+                        <span class="toggle-switch"></span>
+                        ByteTrack Tracking
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_temporal_smoothing" checked>
+                        <span class="toggle-switch"></span>
+                        Temporal Smoothing (EMA)
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_adaptive_intensity" checked>
+                        <span class="toggle-switch"></span>
+                        Intensità Adattiva
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_post_render_check" checked>
+                        <span class="toggle-switch"></span>
+                        Verifica Post-Rendering
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_fisheye_correction" checked>
+                        <span class="toggle-switch"></span>
+                        Correzione Fish-eye
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_motion_detection">
+                        <span class="toggle-switch"></span>
+                        Motion Detection
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_subframe_interpolation">
+                        <span class="toggle-switch"></span>
+                        Interpolazione Sub-frame
+                    </label>
+                </div>
+
+                <hr class="divider">
+
+                <div class="toggle-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_debug_video" checked>
+                        <span class="toggle-switch"></span>
+                        Genera video debug
+                    </label>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable_confidence_report" checked>
+                        <span class="toggle-switch"></span>
+                        Genera report CSV
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Review JSON -->
+        <section class="card">
+            <h2 class="card-title collapsible collapsed" data-target="section-review">
+                Revisione da JSON
+                <span class="chevron">&#9662;</span>
+            </h2>
+            <div id="section-review" class="card-body collapsed-body">
+                <p class="hint">Carica un file JSON di annotazioni esistente per riprendere l'elaborazione.</p>
+                <div class="form-group">
+                    <input type="file" id="jsonFileInput" accept=".json">
+                </div>
+                <div id="jsonFileInfo" class="file-info hidden">
+                    <span id="jsonFileName" class="file-name"></span>
+                    <button id="removeJsonFile" class="btn-icon" title="Rimuovi">&times;</button>
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="normalize">
+                    <span class="toggle-switch"></span>
+                    Normalizza poligoni in rettangoli
+                </label>
+            </div>
+        </section>
+
+        <!-- Pulsanti Azione -->
+        <div class="actions">
+            <button id="btnStart" class="btn btn-primary" disabled>Avvia Elaborazione</button>
+            <button id="btnStop" class="btn btn-danger" disabled>Interrompi</button>
+        </div>
+
+    </aside>
+
+    <!-- Pannello Destro: Output -->
+    <section class="panel panel-output">
+
+        <!-- Indicatore Fasi -->
+        <div class="card">
+            <h2 class="card-title">Progresso</h2>
+            <div id="phases" class="phases">
+                <div class="phase" data-phase="1">
+                    <span class="phase-num">1</span>
+                    <span class="phase-label">Rilevamento</span>
+                </div>
+                <div class="phase" data-phase="2">
+                    <span class="phase-num">2</span>
+                    <span class="phase-label">Revisione</span>
+                </div>
+                <div class="phase" data-phase="3">
+                    <span class="phase-num">3</span>
+                    <span class="phase-label">Rendering</span>
+                </div>
+                <div class="phase" data-phase="4">
+                    <span class="phase-num">4</span>
+                    <span class="phase-label">Verifica</span>
+                </div>
+                <div class="phase" data-phase="5">
+                    <span class="phase-num">5</span>
+                    <span class="phase-label">Audio</span>
+                </div>
+            </div>
+
+            <!-- Barra Progresso -->
+            <div id="progressContainer" class="progress-container hidden">
+                <div class="progress-header">
+                    <span id="progressLabel" class="progress-label"></span>
+                    <span id="progressPercent" class="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="progress-footer">
+                    <span id="progressDetail"></span>
+                    <span id="progressRate"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Console Output -->
+        <div class="card card-grow">
+            <h2 class="card-title">
+                Console
+                <button id="btnClearConsole" class="btn-icon btn-small" title="Pulisci">&#128465;</button>
+            </h2>
+            <div id="console" class="console">
+                <div class="console-line console-info">In attesa di avvio...</div>
+            </div>
+        </div>
+
+        <!-- Risultati -->
+        <div id="resultsCard" class="card hidden">
+            <h2 class="card-title">Risultati</h2>
+            <div id="results" class="results"></div>
+        </div>
+
+    </section>
+
+</main>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
