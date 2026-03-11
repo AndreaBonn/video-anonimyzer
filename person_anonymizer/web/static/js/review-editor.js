@@ -33,8 +33,8 @@ var ReviewEditor = (function () {
     var COLOR_AUTO_STROKE = "rgb(0, 200, 0)";
     var COLOR_MANUAL = "rgba(255, 165, 0, 0.5)";
     var COLOR_MANUAL_STROKE = "rgb(255, 165, 0)";
-    var COLOR_DRAWING = "rgba(0, 220, 255, 0.7)";
-    var COLOR_DRAWING_FILL = "rgba(0, 220, 255, 0.2)";
+    var COLOR_DRAWING = "rgba(45, 212, 191, 0.8)";
+    var COLOR_DRAWING_FILL = "rgba(45, 212, 191, 0.2)";
 
     // ============================
     // Inizializzazione

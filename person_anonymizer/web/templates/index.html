@@ -8,10 +8,17 @@
 </head>
 <body>
 
+<!-- Toast Container -->
+<div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="false"></div>
+
 <!-- Header -->
 <header class="header">
     <h1>Person Anonymizer <span class="version">v7.1</span></h1>
     <span class="header-subtitle">Oscuramento automatico persone in video di sorveglianza</span>
+    <div class="header-status">
+        <span id="headerStatusDot" class="header-status-dot ready"></span>
+        <span id="headerStatusText">Pronto</span>
+    </div>
 </header>
 
 <!-- Main Layout -->
@@ -23,9 +30,9 @@
         <!-- Upload Video -->
         <section class="card">
             <h2 class="card-title">Video di Input</h2>
-            <div id="dropzone" class="dropzone">
+            <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Trascina un video o clicca per selezionare">
                 <div class="dropzone-content">
-                    <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
                         <line x1="12" y1="3" x2="12" y2="15"/>
@@ -36,23 +43,30 @@
                 </div>
                 <input type="file" id="fileInput" accept=".mp4,.m4v,.mov,.avi,.mkv,.webm" hidden>
             </div>
+            <!-- Upload progress -->
+            <div id="uploadProgress" class="upload-progress hidden">
+                <div class="upload-progress-bar">
+                    <div id="uploadProgressFill" class="upload-progress-fill"></div>
+                </div>
+                <div id="uploadProgressText" class="upload-progress-text"></div>
+            </div>
             <div id="fileInfo" class="file-info hidden">
                 <span id="fileName" class="file-name"></span>
                 <span id="fileSize" class="file-size"></span>
-                <button id="removeFile" class="btn-icon" title="Rimuovi">&times;</button>
+                <button id="removeFile" class="btn-icon" title="Rimuovi" aria-label="Rimuovi file">&times;</button>
             </div>
         </section>
 
         <!-- Impostazioni Base -->
         <section class="card">
-            <h2 class="card-title collapsible" data-target="section-base">
+            <h2 class="card-title collapsible" data-target="section-base" tabindex="0" role="button" aria-expanded="true">
                 Impostazioni Base
-                <span class="chevron">&#9662;</span>
+                <span class="chevron" aria-hidden="true">&#9662;</span>
             </h2>
             <div id="section-base" class="card-body">
 
                 <div class="form-group">
-                    <label>Modalità operativa</label>
+                    <label>Modalit&agrave; operativa</label>
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="operation_mode" value="auto" checked>
@@ -81,7 +95,7 @@
 
                 <div class="form-group">
                     <label for="anonymization_intensity">
-                        Intensità oscuramento: <span class="value-display" id="val-intensity">10</span>
+                        Intensit&agrave; oscuramento: <span class="value-display" id="val-intensity">10</span>
                     </label>
                     <input type="range" id="anonymization_intensity" min="2" max="50" value="10" step="1">
                 </div>
@@ -97,9 +111,9 @@
 
         <!-- Rilevamento -->
         <section class="card">
-            <h2 class="card-title collapsible" data-target="section-detection">
+            <h2 class="card-title collapsible" data-target="section-detection" tabindex="0" role="button" aria-expanded="true">
                 Rilevamento
-                <span class="chevron">&#9662;</span>
+                <span class="chevron" aria-hidden="true">&#9662;</span>
             </h2>
             <div id="section-detection" class="card-body">
 
@@ -127,11 +141,11 @@
             </div>
         </section>
 
-        <!-- Funzionalità Avanzate -->
+        <!-- Funzionalit&agrave; Avanzate -->
         <section class="card">
-            <h2 class="card-title collapsible" data-target="section-advanced">
-                Funzionalità Avanzate
-                <span class="chevron">&#9662;</span>
+            <h2 class="card-title collapsible" data-target="section-advanced" tabindex="0" role="button" aria-expanded="true">
+                Funzionalit&agrave; Avanzate
+                <span class="chevron" aria-hidden="true">&#9662;</span>
             </h2>
             <div id="section-advanced" class="card-body">
 
@@ -154,7 +168,7 @@
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_adaptive_intensity" checked>
                         <span class="toggle-switch"></span>
-                        Intensità Adattiva
+                        Intensit&agrave; Adattiva
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_post_render_check" checked>
@@ -197,9 +211,9 @@
 
         <!-- Review JSON -->
         <section class="card">
-            <h2 class="card-title collapsible collapsed" data-target="section-review">
+            <h2 class="card-title collapsible collapsed" data-target="section-review" tabindex="0" role="button" aria-expanded="false">
                 Revisione da JSON
-                <span class="chevron">&#9662;</span>
+                <span class="chevron" aria-hidden="true">&#9662;</span>
             </h2>
             <div id="section-review" class="card-body collapsed-body">
                 <p class="hint">Carica un file JSON di annotazioni esistente per riprendere l'elaborazione.</p>
@@ -208,7 +222,7 @@
                 </div>
                 <div id="jsonFileInfo" class="file-info hidden">
                     <span id="jsonFileName" class="file-name"></span>
-                    <button id="removeJsonFile" class="btn-icon" title="Rimuovi">&times;</button>
+                    <button id="removeJsonFile" class="btn-icon" title="Rimuovi" aria-label="Rimuovi file JSON">&times;</button>
                 </div>
                 <label class="toggle-label">
                     <input type="checkbox" id="normalize">
@@ -232,24 +246,24 @@
         <!-- Indicatore Fasi -->
         <div class="card">
             <h2 class="card-title">Progresso</h2>
-            <div id="phases" class="phases">
-                <div class="phase" data-phase="1">
+            <div id="phases" class="phases" role="group" aria-label="Fasi di elaborazione">
+                <div class="phase" data-phase="1" aria-current="false">
                     <span class="phase-num">1</span>
                     <span class="phase-label">Rilevamento</span>
                 </div>
-                <div class="phase" data-phase="2">
+                <div class="phase" data-phase="2" aria-current="false">
                     <span class="phase-num">2</span>
                     <span class="phase-label">Revisione</span>
                 </div>
-                <div class="phase" data-phase="3">
+                <div class="phase" data-phase="3" aria-current="false">
                     <span class="phase-num">3</span>
                     <span class="phase-label">Rendering</span>
                 </div>
-                <div class="phase" data-phase="4">
+                <div class="phase" data-phase="4" aria-current="false">
                     <span class="phase-num">4</span>
                     <span class="phase-label">Verifica</span>
                 </div>
-                <div class="phase" data-phase="5">
+                <div class="phase" data-phase="5" aria-current="false">
                     <span class="phase-num">5</span>
                     <span class="phase-label">Audio</span>
                 </div>
@@ -261,7 +275,7 @@
                     <span id="progressLabel" class="progress-label"></span>
                     <span id="progressPercent" class="progress-percent">0%</span>
                 </div>
-                <div class="progress-bar">
+                <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso elaborazione">
                     <div id="progressFill" class="progress-fill" style="width: 0%"></div>
                 </div>
                 <div class="progress-footer">
@@ -283,13 +297,17 @@
                 <canvas id="reviewCanvas"></canvas>
             </div>
             <div class="review-controls">
-                <button id="btnPrevFrame" class="btn btn-small">&larr; Prec</button>
-                <input type="range" id="frameSlider" min="0" max="0" value="0">
-                <button id="btnNextFrame" class="btn btn-small">Succ &rarr;</button>
+                <button id="btnPrevFrame" class="btn btn-ghost btn-small" aria-label="Frame precedente">&larr; Prec</button>
+                <input type="range" id="frameSlider" min="0" max="0" value="0" aria-label="Navigazione frame">
+                <button id="btnNextFrame" class="btn btn-ghost btn-small" aria-label="Frame successivo">Succ &rarr;</button>
             </div>
             <div class="review-help">
-                Click: aggiungi punto | Enter: chiudi poligono | D: elimina | Esc: annulla |
-                Frecce/Spazio: naviga | Ctrl+Z: undo
+                <kbd>Click</kbd> aggiungi punto &middot;
+                <kbd>Enter</kbd> chiudi poligono &middot;
+                <kbd>D</kbd> elimina &middot;
+                <kbd>Esc</kbd> annulla &middot;
+                <kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>Space</kbd> naviga &middot;
+                <kbd>Ctrl+Z</kbd> undo
             </div>
             <button id="btnConfirmReview" class="btn btn-primary" style="margin-top:0.5rem">
                 Conferma e Continua
@@ -300,9 +318,9 @@
         <div class="card card-grow">
             <h2 class="card-title">
                 Console
-                <button id="btnClearConsole" class="btn-icon btn-small" title="Pulisci">&#128465;</button>
+                <button id="btnClearConsole" class="btn-icon btn-small" title="Pulisci console" aria-label="Pulisci console">&#128465;</button>
             </h2>
-            <div id="console" class="console">
+            <div id="console" class="console" role="log" aria-live="off" aria-label="Log di elaborazione">
                 <div class="console-line console-info">In attesa di avvio...</div>
             </div>
         </div>
