@@ -1,7 +1,9 @@
-# Person Anonymizer Tool v6.0
+# Person Anonymizer Tool v7.1
 
 Strumento per l'oscuramento automatico di persone in video di sorveglianza.
 Pipeline multi-strategia basata su YOLO v8 con rilevamento multi-scala, tracking ByteTrack, revisione manuale interattiva e normalizzazione delle annotazioni.
+
+Disponibile in due modalità: **linea di comando (CLI)** con revisione interattiva OpenCV, oppure **interfaccia web** con dashboard in tempo reale.
 
 Progettato per telecamere fisse con angolazione grandangolare, dove le persone possono apparire di piccole dimensioni (30-100px).
 
@@ -11,9 +13,16 @@ Progettato per telecamere fisse con angolazione grandangolare, dove le persone p
 - [Requisiti di sistema](#requisiti-di-sistema)
 - [Installazione](#installazione)
 - [Utilizzo](#utilizzo)
-  - [Esempi rapidi](#esempi-rapidi)
+  - [Modalità CLI](#modalità-cli)
   - [Parametri CLI](#parametri-cli)
   - [Workflow consigliato](#workflow-consigliato)
+- [Interfaccia web](#interfaccia-web)
+  - [Avvio dell'interfaccia web](#avvio-dellinterfaccia-web)
+  - [Caricare un video](#caricare-un-video)
+  - [Configurazione parametri](#configurazione-parametri)
+  - [Monitoraggio elaborazione](#monitoraggio-elaborazione)
+  - [Download dei risultati](#download-dei-risultati)
+  - [Rielaborazione da JSON](#rielaborazione-da-json)
 - [Pipeline di elaborazione](#pipeline-di-elaborazione)
 - [Interfaccia di revisione manuale](#interfaccia-di-revisione-manuale)
 - [Calibrazione fish-eye](#calibrazione-fish-eye)
@@ -37,6 +46,7 @@ Progettato per telecamere fisse con angolazione grandangolare, dove le persone p
 - **Interpolazione sub-frame**: generazione di frame virtuali per video a basso framerate (< 15 fps)
 - **Verifica post-rendering**: secondo passaggio YOLO sul video oscurato per segnalare persone ancora visibili
 - **Oscuramento**: pixelation (default) o gaussian blur, applicato esclusivamente all'interno dei poligoni
+- **Interfaccia web**: dashboard Flask con upload drag-and-drop, configurazione parametri, progresso in tempo reale via SSE e download risultati
 
 ## Requisiti di sistema
 
@@ -82,12 +92,15 @@ pip install -r person_anonymizer/requirements.txt
 | ffmpeg-python | 0.2.0     | Binding Python per ffmpeg             |
 | tqdm          | 4.67.3    | Barre di progresso                    |
 | numpy         | 2.4.2     | Calcolo numerico                      |
+| flask         | 3.1.0     | Server web per l'interfaccia grafica  |
 
 Al primo avvio il modello YOLO (`yolov8x.pt`) viene scaricato automaticamente (~130 MB).
 
 ## Utilizzo
 
-### Esempi rapidi
+Il tool può essere usato in due modalità: **CLI** (linea di comando) oppure **interfaccia web** (browser).
+
+### Modalità CLI
 
 ```bash
 # Elaborazione standard con revisione manuale (consigliato)
@@ -151,6 +164,108 @@ Se i poligoni manuali hanno forme irregolari o si sovrappongono:
 ```bash
 python person_anonymizer/person_anonymizer.py video.mp4 --review video_annotations.json --normalize --no-debug
 ```
+
+## Interfaccia web
+
+L'interfaccia web offre una dashboard completa per gestire l'elaborazione dei video direttamente dal browser, senza bisogno di usare il terminale.
+
+### Avvio dell'interfaccia web
+
+```bash
+# Assicurarsi di aver attivato l'ambiente virtuale
+source .venv/bin/activate        # Linux/macOS
+# .venv\Scripts\activate         # Windows
+
+# Avviare il server Flask
+python person_anonymizer/web/app.py
+```
+
+Il server si avvia su `http://127.0.0.1:5000`. Aprire questo indirizzo nel browser.
+
+### Caricare un video
+
+1. Nella sezione **Video Input** (pannello sinistro), trascinare il file video nell'area tratteggiata oppure cliccare per selezionarlo dal file system
+2. Formati supportati: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.m4v`
+3. Dopo il caricamento vengono mostrati il nome del file e la dimensione
+
+### Configurazione parametri
+
+L'interfaccia web permette di configurare tutti i parametri di elaborazione tramite menu espandibili nel pannello sinistro. I parametri sono organizzati in sezioni.
+
+#### Impostazioni base
+
+| Parametro | Opzioni | Default | Descrizione |
+|-----------|---------|---------|-------------|
+| Modalità operativa | Auto / Manuale | Auto | `Auto` elabora senza revisione manuale. `Manuale` apre l'interfaccia OpenCV per la revisione interattiva |
+| Metodo di oscuramento | Pixelation / Blur | Pixelation | Tipo di effetto applicato sulle persone rilevate |
+| Intensità | 2 — 50 | 10 | Dimensione del blocco (pixelation) o raggio del kernel (blur). Valori più alti = oscuramento più forte |
+| Padding | 0 — 60 px | 15 | Margine aggiuntivo intorno alla persona rilevata, in pixel |
+
+#### Impostazioni di rilevamento
+
+| Parametro | Range | Default | Descrizione |
+|-----------|-------|---------|-------------|
+| Modello YOLO | `yolov8x.pt` / `yolov8n.pt` | `yolov8x.pt` | `yolov8x.pt` è più preciso ma più lento. `yolov8n.pt` è veloce ma meno accurato |
+| Confidenza detection | 0.05 — 0.95 | 0.20 | Soglia minima di confidenza: valori bassi rilevano più persone (con più falsi positivi), valori alti sono più selettivi |
+| Soglia NMS IoU | 0.1 — 0.9 | 0.55 | Soglia di sovrapposizione per eliminare detection duplicate. Valori bassi eliminano più duplicati |
+
+#### Funzionalità avanzate
+
+Ogni funzionalità può essere attivata o disattivata tramite un interruttore (toggle):
+
+| Funzionalità | Default | Descrizione |
+|-------------|---------|-------------|
+| Sliding Window | Attivo | Inferenza su griglia 3x3 con 30% di sovrapposizione per rilevare persone piccole |
+| Tracking ByteTrack | Attivo | Mantiene l'identità delle persone tra frame consecutivi |
+| Temporal Smoothing | Attivo | Stabilizza i bounding box con media mobile per ridurre oscillazioni |
+| Intensità adattiva | Attivo | Regola automaticamente l'intensità dell'oscuramento in base alla dimensione della persona |
+| Verifica post-rendering | Attivo | Secondo passaggio YOLO sul video oscurato per verificare che nessuna persona sia rimasta visibile |
+| Correzione fish-eye | Attivo | Corregge la distorsione delle lenti grandangolari (richiede parametri di calibrazione) |
+| Motion detection | Disattivo | Limita l'analisi alle sole zone con movimento rilevato |
+| Interpolazione sub-frame | Disattivo | Genera frame virtuali intermedi per video a basso framerate (< 15 fps) |
+| Video debug | Attivo | Genera un secondo video con i poligoni di oscuramento visibili |
+| Report CSV | Attivo | Genera un file CSV con le statistiche di rilevamento per ogni frame |
+
+### Monitoraggio elaborazione
+
+Dopo aver premuto **Avvia Elaborazione**, il pannello destro mostra:
+
+1. **Indicatore di fase**: 5 fasi visualizzate con stato (in attesa / attiva / completata):
+   - Rilevamento — detection automatica delle persone
+   - Revisione — revisione manuale (solo in modalità manuale)
+   - Rendering — applicazione dell'oscuramento
+   - Verifica — controllo post-rendering
+   - Audio — reintegro dell'audio originale
+
+2. **Barra di progresso**: percentuale di completamento con conteggio dei frame elaborati e velocità (frame/secondo)
+
+3. **Console**: log in tempo reale dal backend, con messaggi colorati per tipo (info, successo, errore, cambio fase)
+
+L'elaborazione può essere interrotta in qualsiasi momento premendo **Interrompi**.
+
+### Download dei risultati
+
+Al termine dell'elaborazione, la sezione **Risultati** elenca tutti i file generati con dimensione e pulsante di download individuale:
+
+- `*_anonymized.mp4` — video finale con persone oscurate e audio
+- `*_debug.mp4` — video con poligoni visibili (se attivato)
+- `*_report.csv` — statistiche di rilevamento (se attivato)
+- `*_annotations.json` — annotazioni riutilizzabili per rielaborazione
+
+### Rielaborazione da JSON
+
+La sezione **Revisione da JSON** permette di ricaricare un file `_annotations.json` generato da un'elaborazione precedente per:
+
+- Rielaborare il video con parametri diversi (es. cambiare metodo da pixelation a blur)
+- Normalizzare i poligoni in rettangoli e unificare le aree sovrapposte
+- Applicare l'oscuramento senza ripetere la fase di detection
+
+Procedura:
+1. Caricare il video originale nella sezione Video Input
+2. Espandere la sezione **Revisione da JSON**
+3. Caricare il file `_annotations.json` corrispondente
+4. Opzionalmente attivare **Normalizza poligoni**
+5. Premere **Avvia Elaborazione**
 
 ## Pipeline di elaborazione
 
@@ -326,7 +441,18 @@ video-anonimizer/
 │   ├── person_anonymizer.py      # Pipeline principale
 │   ├── manual_reviewer.py        # Interfaccia revisione manuale
 │   ├── camera_calibration.py     # Calibrazione camera fish-eye
-│   └── requirements.txt          # Dipendenze Python
+│   ├── requirements.txt          # Dipendenze Python
+│   └── web/                      # Interfaccia web Flask
+│       ├── app.py                # Server Flask e API REST
+│       ├── pipeline_runner.py    # Esecutore pipeline in thread separato
+│       ├── sse_manager.py        # Distribuzione eventi Server-Sent Events
+│       ├── templates/
+│       │   └── index.html        # Pagina principale
+│       ├── static/
+│       │   ├── css/style.css     # Tema dark con glassmorphism
+│       │   └── js/app.js         # Logica frontend
+│       ├── uploads/              # Video caricati (temporanei)
+│       └── outputs/              # Risultati per job
 ├── doc-progetto/
 │   └── specifiche_tecniche_person_anonymizer_v6.md
 ├── docs/
@@ -343,5 +469,6 @@ video-anonimizer/
 - La correzione fish-eye necessita di calibrazione manuale con scacchiera
 - Senza GPU CUDA l'elaborazione e sensibilmente piu lenta
 - Il secondo passaggio di verifica (Fase 4) puo produrre falsi positivi su aree gia oscurate
+- L'interfaccia web opera in modalità `auto` per default; la modalità `manuale` richiede l'interfaccia OpenCV nativa (non disponibile nel browser)
 
 # 

@@ -9,9 +9,7 @@ import uuid
 import json
 from pathlib import Path
 
-from flask import (
-    Flask, render_template, request, jsonify, Response, send_file, stream_with_context
-)
+from flask import Flask, render_template, request, jsonify, Response, send_file, stream_with_context
 
 # Aggiungi parent dir al path per importare person_anonymizer
 PARENT_DIR = Path(__file__).resolve().parent.parent
@@ -36,12 +34,14 @@ pipeline_runner = PipelineRunner(sse_manager, OUTPUT_DIR)
 
 # ---------- Pagina principale ----------
 
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
 # ---------- Upload video ----------
+
 
 @app.route("/api/upload", methods=["POST"])
 def upload_video():
@@ -54,10 +54,15 @@ def upload_video():
 
     ext = Path(f.filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        return jsonify({
-            "error": f"Formato non supportato: {ext}",
-            "supported": sorted(SUPPORTED_EXTENSIONS)
-        }), 400
+        return (
+            jsonify(
+                {
+                    "error": f"Formato non supportato: {ext}",
+                    "supported": sorted(SUPPORTED_EXTENSIONS),
+                }
+            ),
+            400,
+        )
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = UPLOAD_DIR / job_id
@@ -69,15 +74,13 @@ def upload_video():
 
     size_mb = dest.stat().st_size / (1024 * 1024)
 
-    return jsonify({
-        "job_id": job_id,
-        "filename": safe_name,
-        "size_mb": round(size_mb, 2),
-        "path": str(dest)
-    })
+    return jsonify(
+        {"job_id": job_id, "filename": safe_name, "size_mb": round(size_mb, 2), "path": str(dest)}
+    )
 
 
 # ---------- Upload JSON annotazioni ----------
+
 
 @app.route("/api/upload-json", methods=["POST"])
 def upload_json():
@@ -103,6 +106,7 @@ def upload_json():
 
 
 # ---------- Avvia pipeline ----------
+
 
 @app.route("/api/start", methods=["POST"])
 def start_pipeline():
@@ -130,6 +134,7 @@ def start_pipeline():
 
 # ---------- SSE Progress stream ----------
 
+
 @app.route("/api/progress")
 def progress_stream():
     job_id = request.args.get("job_id")
@@ -151,11 +156,12 @@ def progress_stream():
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
 
 
 # ---------- Stop pipeline ----------
+
 
 @app.route("/api/stop", methods=["POST"])
 def stop_pipeline():
@@ -169,12 +175,78 @@ def stop_pipeline():
 
 # ---------- Stato ----------
 
+
 @app.route("/api/status")
 def status():
     return jsonify(pipeline_runner.get_status())
 
 
+# ---------- Review manuale via web ----------
+
+
+@app.route("/api/review/status")
+def review_status():
+    rs = pipeline_runner.review_state
+    if not rs.is_active:
+        return jsonify({"active": False})
+    meta = rs.get_metadata()
+    meta["active"] = True
+    return jsonify(meta)
+
+
+@app.route("/api/review/frame/<int:frame_idx>")
+def review_frame(frame_idx):
+    rs = pipeline_runner.review_state
+    if not rs.is_active:
+        return jsonify({"error": "Nessuna review attiva"}), 404
+    max_w = request.args.get("max_width", 1280, type=int)
+    jpeg_bytes, scale = rs.get_frame_jpeg(frame_idx, max_width=max_w)
+    if jpeg_bytes is None:
+        return jsonify({"error": "Frame non trovato"}), 404
+    return Response(
+        jpeg_bytes,
+        mimetype="image/jpeg",
+        headers={"X-Scale-Factor": str(scale)},
+    )
+
+
+@app.route("/api/review/annotations")
+def review_annotations():
+    rs = pipeline_runner.review_state
+    if not rs.is_active:
+        return jsonify({"error": "Nessuna review attiva"}), 404
+    annotations = rs.get_annotations()
+    # Converti chiavi intere in stringhe per JSON
+    out = {}
+    for fidx, fdata in annotations.items():
+        out[str(fidx)] = fdata
+    return jsonify(out)
+
+
+@app.route("/api/review/annotations/<int:frame_idx>", methods=["PUT"])
+def review_update_annotations(frame_idx):
+    rs = pipeline_runner.review_state
+    if not rs.is_active:
+        return jsonify({"error": "Nessuna review attiva"}), 404
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Payload JSON mancante"}), 400
+    rs.update_annotations(frame_idx, data)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/review/confirm", methods=["POST"])
+def review_confirm():
+    rs = pipeline_runner.review_state
+    if not rs.is_active:
+        return jsonify({"error": "Nessuna review attiva"}), 404
+    annotations = rs.get_annotations()
+    rs.complete(annotations)
+    return jsonify({"ok": True})
+
+
 # ---------- Config defaults ----------
+
 
 @app.route("/api/config/defaults")
 def config_defaults():
@@ -228,6 +300,7 @@ def config_defaults():
 
 # ---------- Download output ----------
 
+
 @app.route("/api/download/<job_id>/<file_type>")
 def download_file(job_id, file_type):
     job_out = OUTPUT_DIR / job_id
@@ -254,6 +327,7 @@ def download_file(job_id, file_type):
 
 # ---------- Lista file output di un job ----------
 
+
 @app.route("/api/outputs/<job_id>")
 def list_outputs(job_id):
     job_out = OUTPUT_DIR / job_id
@@ -273,11 +347,13 @@ def list_outputs(job_id):
                 file_type = "debug"
             elif "anonymized" in f.name:
                 file_type = "video"
-            files.append({
-                "name": f.name,
-                "type": file_type,
-                "size_mb": round(size_mb, 2),
-            })
+            files.append(
+                {
+                    "name": f.name,
+                    "type": file_type,
+                    "size_mb": round(size_mb, 2),
+                }
+            )
 
     return jsonify({"files": files})
 

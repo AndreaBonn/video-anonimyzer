@@ -60,7 +60,7 @@
                         </label>
                         <label class="radio-label">
                             <input type="radio" name="operation_mode" value="manual">
-                            <span>Manuale (salva JSON per review CLI)</span>
+                            <span>Manuale (revisione nel browser)</span>
                         </label>
                     </div>
                 </div>
@@ -271,6 +271,31 @@
             </div>
         </div>
 
+        <!-- Review Editor -->
+        <div id="reviewCard" class="card card-review hidden">
+            <h2 class="card-title">Revisione Manuale</h2>
+            <div class="review-info-bar">
+                <span id="frameLabel">Frame 0 / 0</span>
+                <span id="polyCount">0 poligoni</span>
+                <span id="modeIndicator" class="review-mode-normal">[NORM]</span>
+            </div>
+            <div class="review-canvas-container">
+                <canvas id="reviewCanvas"></canvas>
+            </div>
+            <div class="review-controls">
+                <button id="btnPrevFrame" class="btn btn-small">&larr; Prec</button>
+                <input type="range" id="frameSlider" min="0" max="0" value="0">
+                <button id="btnNextFrame" class="btn btn-small">Succ &rarr;</button>
+            </div>
+            <div class="review-help">
+                Click: aggiungi punto | Enter: chiudi poligono | D: elimina | Esc: annulla |
+                Frecce/Spazio: naviga | Ctrl+Z: undo
+            </div>
+            <button id="btnConfirmReview" class="btn btn-primary" style="margin-top:0.5rem">
+                Conferma e Continua
+            </button>
+        </div>
+
         <!-- Console Output -->
         <div class="card card-grow">
             <h2 class="card-title">
@@ -292,6 +317,7 @@
 
 </main>
 
+<script src="/static/js/review-editor.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

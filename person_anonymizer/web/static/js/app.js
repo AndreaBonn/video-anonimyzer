@@ -287,6 +287,13 @@
             appendLog(data.label, "phase");
         });
 
+        eventSource.addEventListener("review_ready", (e) => {
+            const data = JSON.parse(e.data);
+            appendLog("Revisione manuale pronta — usa l'editor qui sotto", "phase");
+            setActivePhase(3);
+            ReviewEditor.init(data);
+        });
+
         eventSource.addEventListener("progress", (e) => {
             const data = JSON.parse(e.data);
             updateProgress(data);

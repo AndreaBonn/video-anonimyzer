@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from web.sse_manager import SSEManager
-
+from web.review_state import ReviewState
 
 # Mappa config web -> variabile globale del modulo
 GLOBALS_MAP = {
@@ -71,6 +71,7 @@ class TqdmCapture:
         """Installa il patch su tqdm (sia nel modulo tqdm che in person_anonymizer)."""
         import tqdm as tqdm_module
         import person_anonymizer as pa
+
         self._original_tqdm = tqdm_module.tqdm
 
         sse = self._sse
@@ -84,10 +85,14 @@ class TqdmCapture:
                 self._last_emit = 0
                 # Emetti evento inizio fase
                 desc = self.desc or ""
-                sse.emit(job_id, "phase", {
-                    "description": desc,
-                    "total": self.total or 0,
-                })
+                sse.emit(
+                    job_id,
+                    "phase",
+                    {
+                        "description": desc,
+                        "total": self.total or 0,
+                    },
+                )
 
             def update(self, n=1):
                 super().update(n)
@@ -97,23 +102,31 @@ class TqdmCapture:
                     self._last_emit = now
                     rate = self.format_dict.get("rate", 0) or 0
                     elapsed = self.format_dict.get("elapsed", 0) or 0
-                    self._sse.emit(self._job_id, "progress", {
-                        "current": self.n,
-                        "total": self.total or 0,
-                        "description": self.desc or "",
-                        "rate": round(rate, 2),
-                        "elapsed": round(elapsed, 1),
-                    })
+                    self._sse.emit(
+                        self._job_id,
+                        "progress",
+                        {
+                            "current": self.n,
+                            "total": self.total or 0,
+                            "description": self.desc or "",
+                            "rate": round(rate, 2),
+                            "elapsed": round(elapsed, 1),
+                        },
+                    )
 
             def close(self):
                 # Emetti progresso finale
-                self._sse.emit(self._job_id, "progress", {
-                    "current": self.total or self.n,
-                    "total": self.total or self.n,
-                    "description": self.desc or "",
-                    "rate": 0,
-                    "elapsed": 0,
-                })
+                self._sse.emit(
+                    self._job_id,
+                    "progress",
+                    {
+                        "current": self.total or self.n,
+                        "total": self.total or self.n,
+                        "description": self.desc or "",
+                        "rate": 0,
+                        "elapsed": 0,
+                    },
+                )
                 super().close()
 
         # Patcha sia il modulo tqdm che il riferimento in person_anonymizer
@@ -125,6 +138,7 @@ class TqdmCapture:
         if self._original_tqdm:
             import tqdm as tqdm_module
             import person_anonymizer as pa
+
             tqdm_module.tqdm = self._original_tqdm
             pa.tqdm = self._original_tqdm
 
@@ -157,10 +171,14 @@ class StdoutCapture:
                 # Detecta fasi dalla stampa
                 phase_match = re.match(r"\[FASE (\d)/5\]", line)
                 if phase_match:
-                    self._sse.emit(self._job_id, "phase_label", {
-                        "phase": int(phase_match.group(1)),
-                        "label": line,
-                    })
+                    self._sse.emit(
+                        self._job_id,
+                        "phase_label",
+                        {
+                            "phase": int(phase_match.group(1)),
+                            "label": line,
+                        },
+                    )
                 self._sse.emit(self._job_id, "log", {"message": line})
 
     def flush(self):
@@ -178,9 +196,11 @@ class PipelineRunner:
         self._current_job_id: str | None = None
         self._thread: threading.Thread | None = None
         self._stop_requested = False
+        self.review_state = ReviewState()
 
-    def start(self, job_id: str, video_path: str, config: dict,
-              review_json: str | None = None) -> tuple[bool, str]:
+    def start(
+        self, job_id: str, video_path: str, config: dict, review_json: str | None = None
+    ) -> tuple[bool, str]:
         """Avvia la pipeline. Restituisce (success, message)."""
         with self._lock:
             if self._thread and self._thread.is_alive():
@@ -215,8 +235,7 @@ class PipelineRunner:
                 "job_id": self._current_job_id if running else None,
             }
 
-    def _run(self, job_id: str, video_path: str, config: dict,
-             review_json: str | None):
+    def _run(self, job_id: str, video_path: str, config: dict, review_json: str | None):
         """Esegue la pipeline nel thread. Patcha globals, cattura output."""
 
         import person_anonymizer as pa
@@ -249,14 +268,10 @@ class PipelineRunner:
 
         # --- Costruisci args namespace ---
         mode = config.get("operation_mode") or pa.OPERATION_MODE
-        # In modalità web, forza "auto" per evitare la finestra OpenCV
-        if mode == "manual":
-            # Esegue detection ma salta la review interattiva
-            pass
 
         args = SimpleNamespace(
             input=video_path,
-            mode="auto",  # Sempre auto da web, la review manuale è separata
+            mode=mode,
             method=config.get("anonymization_method"),
             no_debug=not config.get("enable_debug_video", True),
             no_report=not config.get("enable_confidence_report", True),
@@ -264,6 +279,12 @@ class PipelineRunner:
             output=output_path,
             normalize=config.get("normalize", False),
         )
+
+        # In modalità manual da web, passa lo stato review e il manager SSE
+        if mode == "manual":
+            args._review_state = self.review_state
+            args._sse_manager = self._sse
+            args._job_id = job_id
 
         # --- Installa cattura ---
         tqdm_capture = TqdmCapture(self._sse, job_id)
@@ -281,28 +302,42 @@ class PipelineRunner:
             outputs = []
             for f in sorted(job_output.iterdir()):
                 if f.is_file():
-                    outputs.append({
-                        "name": f.name,
-                        "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
-                    })
+                    outputs.append(
+                        {
+                            "name": f.name,
+                            "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
+                        }
+                    )
 
-            self._sse.emit(job_id, "completed", {
-                "job_id": job_id,
-                "outputs": outputs,
-            })
+            self._sse.emit(
+                job_id,
+                "completed",
+                {
+                    "job_id": job_id,
+                    "outputs": outputs,
+                },
+            )
 
         except SystemExit as e:
             # run_pipeline chiama sys.exit(1) su errori
-            self._sse.emit(job_id, "error", {
-                "job_id": job_id,
-                "message": f"Pipeline terminata con codice {e.code}",
-            })
+            self._sse.emit(
+                job_id,
+                "error",
+                {
+                    "job_id": job_id,
+                    "message": f"Pipeline terminata con codice {e.code}",
+                },
+            )
 
         except Exception as e:
-            self._sse.emit(job_id, "error", {
-                "job_id": job_id,
-                "message": str(e),
-            })
+            self._sse.emit(
+                job_id,
+                "error",
+                {
+                    "job_id": job_id,
+                    "message": str(e),
+                },
+            )
 
         finally:
             # --- Ripristina tutto ---

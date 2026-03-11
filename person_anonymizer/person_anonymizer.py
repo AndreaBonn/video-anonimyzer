@@ -115,7 +115,7 @@ ENABLE_CONFIDENCE_REPORT = True
 # ============================================================
 # FORMATI VIDEO SUPPORTATI
 # ============================================================
-SUPPORTED_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.avi', '.mkv', '.webm'}
+SUPPORTED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"}
 
 # ============================================================
 # VERSIONE
@@ -127,13 +127,15 @@ VERSION = "7.1"
 # UTILITA' PRE-PROCESSING
 # ============================================================
 
+
 def build_undistortion_maps(camera_matrix, dist_coefficients, frame_w, frame_h):
     """Costruisce le mappe di undistortion (una sola volta)."""
     new_matrix, roi = cv2.getOptimalNewCameraMatrix(
-        camera_matrix, dist_coefficients, (frame_w, frame_h), 1)
+        camera_matrix, dist_coefficients, (frame_w, frame_h), 1
+    )
     map1, map2 = cv2.initUndistortRectifyMap(
-        camera_matrix, dist_coefficients, None,
-        new_matrix, (frame_w, frame_h), cv2.CV_16SC2)
+        camera_matrix, dist_coefficients, None, new_matrix, (frame_w, frame_h), cv2.CV_16SC2
+    )
     return map1, map2
 
 
@@ -178,6 +180,7 @@ def enhance_frame(frame, clahe_obj, darkness_threshold):
 # MOTION DETECTION
 # ============================================================
 
+
 class MotionDetector:
     """Rileva zone di movimento tramite frame differencing."""
 
@@ -204,25 +207,27 @@ class MotionDetector:
 
         _, thresh = cv2.threshold(diff, self.threshold, 255, cv2.THRESH_BINARY)
         thresh = cv2.dilate(thresh, None, iterations=2)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         regions = []
         for c in contours:
             if cv2.contourArea(c) < self.min_area:
                 continue
             x, y, w, h = cv2.boundingRect(c)
-            regions.append((
-                max(0, x - self.padding),
-                max(0, y - self.padding),
-                x + w + self.padding,
-                y + h + self.padding
-            ))
+            regions.append(
+                (
+                    max(0, x - self.padding),
+                    max(0, y - self.padding),
+                    x + w + self.padding,
+                    y + h + self.padding,
+                )
+            )
         return regions
 
 
 # ============================================================
 # RILEVAMENTO MULTI-STRATEGIA
 # ============================================================
+
 
 def get_window_patches(frame_w, frame_h, grid, overlap):
     """Genera patch per sliding window."""
@@ -243,7 +248,7 @@ def get_window_patches(frame_w, frame_h, grid, overlap):
 
 def patch_intersects_motion(px1, py1, px2, py2, motion_regions):
     """Verifica se una patch interseca almeno una zona di movimento."""
-    for (mx1, my1, mx2, my2) in motion_regions:
+    for mx1, my1, mx2, my2 in motion_regions:
         if px1 < mx2 and px2 > mx1 and py1 < my2 and py2 > my1:
             return True
     return False
@@ -253,7 +258,7 @@ def run_sliding_window(model, frame, patches, conf, motion_regions):
     """Esegue YOLO su ogni patch della griglia sliding window."""
     all_boxes = []
     hits = 0
-    for (px1, py1, px2, py2) in patches:
+    for px1, py1, px2, py2 in patches:
         if motion_regions is not None and len(motion_regions) > 0:
             if not patch_intersects_motion(px1, py1, px2, py2, motion_regions):
                 continue
@@ -261,9 +266,7 @@ def run_sliding_window(model, frame, patches, conf, motion_regions):
         results = model(patch, conf=conf, classes=[0], verbose=False)
         for box in results[0].boxes:
             x1, y1, x2, y2 = map(float, box.xyxy[0])
-            all_boxes.append([x1 + px1, y1 + py1,
-                              x2 + px1, y2 + py1,
-                              float(box.conf[0])])
+            all_boxes.append([x1 + px1, y1 + py1, x2 + px1, y2 + py1, float(box.conf[0])])
         if len(results[0].boxes) > 0:
             hits += 1
     return all_boxes, hits
@@ -278,18 +281,15 @@ def detect_and_rescale(model, frame, conf, scale, base_imgsz=640):
     internamente a 640px e il beneficio del multi-scale è nullo.
     """
     effective_imgsz = min(int(base_imgsz * max(1.0, scale)), 1280)
-    results = model(frame, conf=conf, classes=[0], verbose=False,
-                    imgsz=effective_imgsz)
+    results = model(frame, conf=conf, classes=[0], verbose=False, imgsz=effective_imgsz)
     boxes = []
     for box in results[0].boxes:
         x1, y1, x2, y2 = map(float, box.xyxy[0])
-        boxes.append([x1 / scale, y1 / scale, x2 / scale, y2 / scale,
-                      float(box.conf[0])])
+        boxes.append([x1 / scale, y1 / scale, x2 / scale, y2 / scale, float(box.conf[0])])
     return boxes
 
 
-def run_multiscale_inference(model, frame, scales, augmentations,
-                             conf, orig_w, orig_h):
+def run_multiscale_inference(model, frame, scales, augmentations, conf, orig_w, orig_h):
     """Esegue inferenza multi-scala con TTA."""
     all_boxes = []
     hits = 0
@@ -322,9 +322,7 @@ def apply_nms(boxes, iou_threshold):
     boxes_np = np.array(boxes)
     rects = [[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in boxes_np]
     scores = list(boxes_np[:, 4])
-    indices = cv2.dnn.NMSBoxes(rects, scores,
-                                score_threshold=0.0,
-                                nms_threshold=iou_threshold)
+    indices = cv2.dnn.NMSBoxes(rects, scores, score_threshold=0.0, nms_threshold=iou_threshold)
     if len(indices) > 0:
         return [boxes[i] for i in indices.flatten()]
     return []
@@ -365,6 +363,7 @@ def compute_iou_boxes(box_a, box_b):
 # INTERPOLAZIONE SUB-FRAME
 # ============================================================
 
+
 def interpolate_frames(frame_a, frame_b, n_steps):
     """Genera frame interpolati tra due frame consecutivi."""
     interpolated = []
@@ -383,6 +382,7 @@ def should_interpolate(fps, threshold):
 # ============================================================
 # TRACKING BYTETRACK
 # ============================================================
+
 
 def create_tracker(fps):
     """Crea un'istanza di ByteTracker."""
@@ -403,7 +403,7 @@ def create_tracker(fps):
         track_low_thresh=0.15,
         new_track_thresh=0.4,
         track_buffer=max(TRACK_MAX_AGE, int(fps * 2)),
-        match_thresh=TRACK_MATCH_THRESH
+        match_thresh=TRACK_MATCH_THRESH,
     )
     return BYTETracker(tracker_args, frame_rate=int(fps))
 
@@ -471,6 +471,7 @@ def update_tracker(tracker, nms_boxes, frame_shape):
 # TEMPORAL SMOOTHING
 # ============================================================
 
+
 class TemporalSmoother:
     """
     Exponential Moving Average con ghost boxes per occlusioni temporanee.
@@ -494,8 +495,7 @@ class TemporalSmoother:
         if track_id not in self.state:
             self.state[track_id] = curr
         else:
-            self.state[track_id] = (self.alpha * curr
-                                    + (1 - self.alpha) * self.state[track_id])
+            self.state[track_id] = self.alpha * curr + (1 - self.alpha) * self.state[track_id]
         # Reset ghost countdown se il track riappare
         self.ghost_countdown.pop(track_id, None)
         s = self.state[track_id]
@@ -518,9 +518,9 @@ class TemporalSmoother:
                 cy = (s[1] + s[3]) / 2
                 w = (s[2] - s[0]) * self.ghost_expansion
                 h = (s[3] - s[1]) * self.ghost_expansion
-                ghosts.append((tid,
-                               int(cx - w / 2), int(cy - h / 2),
-                               int(cx + w / 2), int(cy + h / 2)))
+                ghosts.append(
+                    (tid, int(cx - w / 2), int(cy - h / 2), int(cx + w / 2), int(cy + h / 2))
+                )
                 self.ghost_countdown[tid] -= 1
             else:
                 del self.ghost_countdown[tid]
@@ -538,6 +538,7 @@ class TemporalSmoother:
 # ============================================================
 # INTENSITA' ADATTIVA
 # ============================================================
+
 
 def compute_adaptive_intensity(box_height, base_intensity, reference_height):
     """
@@ -560,6 +561,7 @@ def compute_adaptive_intensity(box_height, base_intensity, reference_height):
 # OSCURAMENTO
 # ============================================================
 
+
 def obscure_polygon(frame, points, method, intensity):
     """Applica oscuramento (pixelation o blur) dentro un poligono."""
     pts = np.array(points, dtype=np.int32)
@@ -576,22 +578,19 @@ def obscure_polygon(frame, points, method, intensity):
         return frame
 
     if method == "pixelation":
-        roi = frame[y:y + h, x:x + w].copy()
+        roi = frame[y : y + h, x : x + w].copy()
         block = max(1, intensity)
-        small = cv2.resize(roi,
-                           (max(1, w // block), max(1, h // block)),
-                           interpolation=cv2.INTER_LINEAR)
-        obscured_roi = cv2.resize(small, (w, h),
-                                  interpolation=cv2.INTER_NEAREST)
+        small = cv2.resize(
+            roi, (max(1, w // block), max(1, h // block)), interpolation=cv2.INTER_LINEAR
+        )
+        obscured_roi = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
     else:  # blur
         k = intensity if intensity % 2 == 1 else intensity + 1
-        obscured_roi = cv2.GaussianBlur(frame[y:y + h, x:x + w], (k, k), 0)
+        obscured_roi = cv2.GaussianBlur(frame[y : y + h, x : x + w], (k, k), 0)
 
-    mask_roi = mask[y:y + h, x:x + w]
-    frame[y:y + h, x:x + w] = np.where(
-        mask_roi[:, :, np.newaxis] == 255,
-        obscured_roi,
-        frame[y:y + h, x:x + w]
+    mask_roi = mask[y : y + h, x : x + w]
+    frame[y : y + h, x : x + w] = np.where(
+        mask_roi[:, :, np.newaxis] == 255, obscured_roi, frame[y : y + h, x : x + w]
     )
     return frame
 
@@ -599,6 +598,7 @@ def obscure_polygon(frame, points, method, intensity):
 # ============================================================
 # DEBUG VISIVO
 # ============================================================
+
 
 def draw_debug_polygons(frame, auto_polygons, manual_polygons):
     """Disegna poligoni colorati per il video debug."""
@@ -612,14 +612,14 @@ def draw_debug_polygons(frame, auto_polygons, manual_polygons):
         pts = np.array(poly, dtype=np.int32)
         cv2.fillPoly(overlay, [pts], REVIEW_MANUAL_COLOR)
         cv2.polylines(debug_frame, [pts], True, REVIEW_MANUAL_COLOR, 2)
-    cv2.addWeighted(overlay, REVIEW_FILL_ALPHA, debug_frame,
-                    1 - REVIEW_FILL_ALPHA, 0, debug_frame)
+    cv2.addWeighted(overlay, REVIEW_FILL_ALPHA, debug_frame, 1 - REVIEW_FILL_ALPHA, 0, debug_frame)
     return debug_frame
 
 
 # ============================================================
 # REINTEGRO AUDIO
 # ============================================================
+
 
 def encode_with_audio(video_no_audio, original_video, output_path):
     """
@@ -633,23 +633,37 @@ def encode_with_audio(video_no_audio, original_video, output_path):
     try:
         video_in = ffmpeg.input(video_no_audio)
         audio_in = ffmpeg.input(original_video).audio
-        (ffmpeg
-            .output(video_in, audio_in, output_path,
-                    vcodec='libx264', crf=18, preset='slow',
-                    pix_fmt='yuv420p',
-                    acodec='aac', audio_bitrate='192k')
+        (
+            ffmpeg.output(
+                video_in,
+                audio_in,
+                output_path,
+                vcodec="libx264",
+                crf=18,
+                preset="slow",
+                pix_fmt="yuv420p",
+                acodec="aac",
+                audio_bitrate="192k",
+            )
             .overwrite_output()
-            .run(quiet=True))
+            .run(quiet=True)
+        )
     except ffmpeg.Error:
         # Fallback: tenta senza audio
         try:
             video_in = ffmpeg.input(video_no_audio)
-            (ffmpeg
-                .output(video_in, output_path,
-                        vcodec='libx264', crf=18, preset='slow',
-                        pix_fmt='yuv420p')
+            (
+                ffmpeg.output(
+                    video_in,
+                    output_path,
+                    vcodec="libx264",
+                    crf=18,
+                    preset="slow",
+                    pix_fmt="yuv420p",
+                )
                 .overwrite_output()
-                .run(quiet=True))
+                .run(quiet=True)
+            )
         except ffmpeg.Error:
             shutil.copy(video_no_audio, output_path)
 
@@ -658,12 +672,13 @@ def encode_without_audio(video_no_audio, output_path):
     """Codifica il video in H.264 senza audio."""
     try:
         video_in = ffmpeg.input(video_no_audio)
-        (ffmpeg
-            .output(video_in, output_path,
-                    vcodec='libx264', crf=18, preset='slow',
-                    pix_fmt='yuv420p')
+        (
+            ffmpeg.output(
+                video_in, output_path, vcodec="libx264", crf=18, preset="slow", pix_fmt="yuv420p"
+            )
             .overwrite_output()
-            .run(quiet=True))
+            .run(quiet=True)
+        )
     except ffmpeg.Error:
         shutil.copy(video_no_audio, output_path)
 
@@ -672,8 +687,8 @@ def encode_without_audio(video_no_audio, output_path):
 # VERIFICA POST-RENDERING
 # ============================================================
 
-def run_post_render_check(anonymized_video_path, model, confidence,
-                          report_data, check_scales=None):
+
+def run_post_render_check(anonymized_video_path, model, confidence, report_data, check_scales=None):
     """
     Secondo passaggio YOLO sul video oscurato, con multi-scale.
 
@@ -718,16 +733,14 @@ def run_post_render_check(anonymized_video_path, model, confidence,
         all_boxes = []
         for scale in check_scales:
             if scale == 1.0:
-                results = model(frame, conf=confidence, classes=[0],
-                                verbose=False)
+                results = model(frame, conf=confidence, classes=[0], verbose=False)
                 for box in results[0].boxes:
                     x1, y1, x2, y2 = map(float, box.xyxy[0])
                     all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
             else:
                 new_w = int(frame_w * scale)
                 new_h = int(frame_h * scale)
-                scaled = cv2.resize(frame, (new_w, new_h),
-                                    interpolation=cv2.INTER_CUBIC)
+                scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
                 boxes = detect_and_rescale(model, scaled, confidence, scale)
                 all_boxes.extend(boxes)
 
@@ -736,7 +749,7 @@ def run_post_render_check(anonymized_video_path, model, confidence,
         if len(nms_boxes) > 0:
             alert_frames.append((frame_idx, len(nms_boxes), nms_boxes))
             if frame_idx in report_data:
-                report_data[frame_idx]['post_check_alerts'] = len(nms_boxes)
+                report_data[frame_idx]["post_check_alerts"] = len(nms_boxes)
 
         frame_idx += 1
         pbar.update(1)
@@ -809,6 +822,7 @@ def filter_artifact_detections(alert_frames, annotations, iou_threshold):
 # BOX -> POLIGONO
 # ============================================================
 
+
 def box_to_polygon(x1, y1, x2, y2, padding=0, frame_w=None, frame_h=None):
     """
     Converte bounding box in poligono 4 punti con padding direzionale.
@@ -861,6 +875,7 @@ def polygon_to_bbox(polygon):
 # NORMALIZZAZIONE ANNOTAZIONI
 # ============================================================
 
+
 def _rects_overlap(r1, r2):
     """
     Verifica se due rettangoli (x, y, w, h) si sovrappongono.
@@ -879,8 +894,7 @@ def _rects_overlap(r1, r2):
     """
     x1, y1, w1, h1 = r1
     x2, y2, w2, h2 = r2
-    return not (x1 + w1 <= x2 or x2 + w2 <= x1 or
-                y1 + h1 <= y2 or y2 + h2 <= y1)
+    return not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1)
 
 
 def _merge_rects(r1, r2):
@@ -970,11 +984,7 @@ def normalize_annotations(annotations):
         total_before += len(all_polys)
 
         if not all_polys:
-            normalized[fidx] = {
-                "auto": [],
-                "manual": [],
-                "intensities": []
-            }
+            normalized[fidx] = {"auto": [], "manual": [], "intensities": []}
             continue
 
         # Converti ogni poligono nel suo bounding rectangle (x, y, w, h)
@@ -991,21 +1001,18 @@ def normalize_annotations(annotations):
         # Converti rettangoli in poligoni e ricalcola intensità
         new_polys = []
         new_intensities = []
-        for (x, y, w, h) in merged:
+        for x, y, w, h in merged:
             poly = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
             new_polys.append(poly)
             if ENABLE_ADAPTIVE_INTENSITY:
                 intensity = compute_adaptive_intensity(
-                    h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT)
+                    h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT
+                )
             else:
                 intensity = ANONYMIZATION_INTENSITY
             new_intensities.append(intensity)
 
-        normalized[fidx] = {
-            "auto": new_polys,
-            "manual": [],
-            "intensities": new_intensities
-        }
+        normalized[fidx] = {"auto": new_polys, "manual": [], "intensities": new_intensities}
 
     return normalized, (total_before, total_after)
 
@@ -1014,8 +1021,8 @@ def normalize_annotations(annotations):
 # DETECTION COMPLETA SU UN FRAME
 # ============================================================
 
-def run_full_detection(model, frame, conf, frame_w, frame_h,
-                       motion_regions, patches):
+
+def run_full_detection(model, frame, conf, frame_w, frame_h, motion_regions, patches):
     """
     Esegue rilevamento sliding window + multi-scale + TTA su un frame.
 
@@ -1032,15 +1039,14 @@ def run_full_detection(model, frame, conf, frame_w, frame_h,
 
     # Sliding window + NMS interna
     if ENABLE_SLIDING_WINDOW and patches:
-        sw_boxes, sw_hits = run_sliding_window(
-            model, frame, patches, conf, motion_regions)
+        sw_boxes, sw_hits = run_sliding_window(model, frame, patches, conf, motion_regions)
         sw_boxes = apply_nms(sw_boxes, NMS_IOU_INTERNAL)
         all_boxes.extend(sw_boxes)
 
     # Multi-scale + TTA + NMS interna
     ms_boxes, ms_hits = run_multiscale_inference(
-        model, frame, INFERENCE_SCALES, TTA_AUGMENTATIONS,
-        conf, frame_w, frame_h)
+        model, frame, INFERENCE_SCALES, TTA_AUGMENTATIONS, conf, frame_w, frame_h
+    )
     ms_boxes = apply_nms(ms_boxes, NMS_IOU_INTERNAL)
     all_boxes.extend(ms_boxes)
 
@@ -1051,9 +1057,21 @@ def run_full_detection(model, frame, conf, frame_w, frame_h,
 # RENDERING VIDEO
 # ============================================================
 
-def render_video(input_path, output_path, annotations, fps, frame_w, frame_h,
-                 method, fisheye_enabled, undist_map1, undist_map2,
-                 debug_path=None, desc="Rendering"):
+
+def render_video(
+    input_path,
+    output_path,
+    annotations,
+    fps,
+    frame_w,
+    frame_h,
+    method,
+    fisheye_enabled,
+    undist_map1,
+    undist_map2,
+    debug_path=None,
+    desc="Rendering",
+):
     """
     Renderizza il video anonimizzato dal video originale.
 
@@ -1084,17 +1102,15 @@ def render_video(input_path, output_path, annotations, fps, frame_w, frame_h,
     desc : str
         Descrizione per la barra di progresso.
     """
-    fourcc = cv2.VideoWriter_fourcc(*'FFV1')
+    fourcc = cv2.VideoWriter_fourcc(*"FFV1")
 
     cap = cv2.VideoCapture(input_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    out_writer = cv2.VideoWriter(output_path, fourcc, fps,
-                                  (frame_w, frame_h))
+    out_writer = cv2.VideoWriter(output_path, fourcc, fps, (frame_w, frame_h))
     debug_writer = None
     if debug_path:
-        debug_writer = cv2.VideoWriter(debug_path, fourcc, fps,
-                                        (frame_w, frame_h))
+        debug_writer = cv2.VideoWriter(debug_path, fourcc, fps, (frame_w, frame_h))
     pbar = tqdm(total=total_frames, desc=desc, unit=" frame")
     frame_idx = 0
 
@@ -1144,9 +1160,58 @@ def render_video(input_path, output_path, annotations, fps, frame_w, frame_h,
         debug_writer.release()
 
 
+def _compute_review_stats(original, reviewed, total_frames):
+    """Calcola statistiche di review confrontando annotazioni prima e dopo.
+
+    Parameters
+    ----------
+    original : dict
+        Annotazioni originali {frame_idx: {auto: [...], manual: [...]}}.
+    reviewed : dict
+        Annotazioni dopo la review.
+    total_frames : int
+        Numero totale di frame nel video.
+
+    Returns
+    -------
+    dict
+        Contiene added, removed, frames_modified, frames_reviewed.
+    """
+    added = 0
+    removed = 0
+    frames_modified = 0
+
+    all_frames = set(original.keys()) | set(reviewed.keys())
+    for fidx in all_frames:
+        orig_auto = original.get(fidx, {}).get("auto", [])
+        orig_manual = original.get(fidx, {}).get("manual", [])
+        orig_count = len(orig_auto) + len(orig_manual)
+
+        rev_auto = reviewed.get(fidx, {}).get("auto", [])
+        rev_manual = reviewed.get(fidx, {}).get("manual", [])
+        rev_count = len(rev_auto) + len(rev_manual)
+
+        diff = rev_count - orig_count
+        if diff > 0:
+            added += diff
+        elif diff < 0:
+            removed += abs(diff)
+
+        if rev_count != orig_count:
+            frames_modified += 1
+
+    return {
+        "added": added,
+        "removed": removed,
+        "frames_modified": frames_modified,
+        "frames_reviewed": total_frames,
+    }
+
+
 # ============================================================
 # PIPELINE PRINCIPALE
 # ============================================================
+
 
 def run_pipeline(args):
     """Esegue la pipeline completa di anonimizzazione."""
@@ -1232,44 +1297,63 @@ def run_pipeline(args):
         fisheye_enabled = False
 
     # --- Interpolazione auto-disable ---
-    do_interpolation = (ENABLE_SUBFRAME_INTERPOLATION
-                        and should_interpolate(fps, INTERPOLATION_FPS_THRESHOLD))
+    do_interpolation = ENABLE_SUBFRAME_INTERPOLATION and should_interpolate(
+        fps, INTERPOLATION_FPS_THRESHOLD
+    )
     if do_interpolation and fps < 3:
-        print("ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe "
-              "produrre artefatti. Considera di disabilitarla.")
+        print(
+            "ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe "
+            "produrre artefatti. Considera di disabilitarla."
+        )
 
     # --- Intensità label ---
     if ENABLE_ADAPTIVE_INTENSITY:
-        method_label = (f"{method} adattivo "
-                        f"(base: {ANONYMIZATION_INTENSITY}px, "
-                        f"ref: {ADAPTIVE_REFERENCE_HEIGHT}px)")
+        method_label = (
+            f"{method} adattivo "
+            f"(base: {ANONYMIZATION_INTENSITY}px, "
+            f"ref: {ADAPTIVE_REFERENCE_HEIGHT}px)"
+        )
     else:
         method_label = f"{method} ({ANONYMIZATION_INTENSITY}px)"
 
     # --- Header console ---
     print(f"\nPerson Anonymizer v{VERSION}")
     print("-" * 40)
-    print(f"Input:          {Path(input_path).name}  "
-          f"({total_frames} frame, {fps:.0f}fps, {res_label})")
+    print(
+        f"Input:          {Path(input_path).name}  "
+        f"({total_frames} frame, {fps:.0f}fps, {res_label})"
+    )
     print(f"Output:         {Path(output_path).name}")
     print(f"Modalita':      {mode}")
     print(f"Metodo:         {method_label}")
     print(f"Modello:        {YOLO_MODEL}  |  Confidenza: {DETECTION_CONFIDENCE}")
-    print(f"Scale:          [{', '.join(f'{s}x' for s in INFERENCE_SCALES)}]"
-          f" + {', '.join(TTA_AUGMENTATIONS)}")
-    sw_status = (f"griglia {SLIDING_WINDOW_GRID}x{SLIDING_WINDOW_GRID}, "
-                 f"overlap {int(SLIDING_WINDOW_OVERLAP * 100)}%"
-                 if ENABLE_SLIDING_WINDOW else "disabilitato")
+    print(
+        f"Scale:          [{', '.join(f'{s}x' for s in INFERENCE_SCALES)}]"
+        f" + {', '.join(TTA_AUGMENTATIONS)}"
+    )
+    sw_status = (
+        f"griglia {SLIDING_WINDOW_GRID}x{SLIDING_WINDOW_GRID}, "
+        f"overlap {int(SLIDING_WINDOW_OVERLAP * 100)}%"
+        if ENABLE_SLIDING_WINDOW
+        else "disabilitato"
+    )
     print(f"Sliding window: {sw_status}")
     print(f"Fish-eye:       {'abilitato' if fisheye_enabled else 'disabilitato'}")
-    print(f"Tracking:       ByteTrack (max_age: {TRACK_MAX_AGE})"
-          if ENABLE_TRACKING else "Tracking:       disabilitato")
-    print(f"Smoothing:      EMA (alpha: {SMOOTHING_ALPHA})"
-          if ENABLE_TEMPORAL_SMOOTHING else "Smoothing:      disabilitato")
-    interp_status = ("disabilitata (fps >= "
-                     f"{INTERPOLATION_FPS_THRESHOLD})"
-                     if not do_interpolation
-                     else f"abilitata ({fps:.0f}fps < {INTERPOLATION_FPS_THRESHOLD}fps)")
+    print(
+        f"Tracking:       ByteTrack (max_age: {TRACK_MAX_AGE})"
+        if ENABLE_TRACKING
+        else "Tracking:       disabilitato"
+    )
+    print(
+        f"Smoothing:      EMA (alpha: {SMOOTHING_ALPHA})"
+        if ENABLE_TEMPORAL_SMOOTHING
+        else "Smoothing:      disabilitato"
+    )
+    interp_status = (
+        "disabilitata (fps >= " f"{INTERPOLATION_FPS_THRESHOLD})"
+        if not do_interpolation
+        else f"abilitata ({fps:.0f}fps < {INTERPOLATION_FPS_THRESHOLD}fps)"
+    )
     print(f"Interpolazione: {interp_status}")
     print("-" * 40)
 
@@ -1282,24 +1366,21 @@ def run_pipeline(args):
     undist_map1, undist_map2 = None, None
     if fisheye_enabled:
         undist_map1, undist_map2 = build_undistortion_maps(
-            CAMERA_MATRIX, DIST_COEFFICIENTS, frame_w, frame_h)
+            CAMERA_MATRIX, DIST_COEFFICIENTS, frame_w, frame_h
+        )
 
     # CLAHE object (creato una sola volta, riutilizzato per ogni frame)
-    clahe_obj = cv2.createCLAHE(clipLimit=QUALITY_CLAHE_CLIP,
-                                 tileGridSize=QUALITY_CLAHE_GRID)
+    clahe_obj = cv2.createCLAHE(clipLimit=QUALITY_CLAHE_CLIP, tileGridSize=QUALITY_CLAHE_GRID)
 
     # Motion detector
     motion_detector = None
     if ENABLE_MOTION_DETECTION:
-        motion_detector = MotionDetector(MOTION_THRESHOLD, MOTION_MIN_AREA,
-                                         MOTION_PADDING)
+        motion_detector = MotionDetector(MOTION_THRESHOLD, MOTION_MIN_AREA, MOTION_PADDING)
 
     # Sliding window patches
     patches = []
     if ENABLE_SLIDING_WINDOW:
-        patches = get_window_patches(frame_w, frame_h,
-                                      SLIDING_WINDOW_GRID,
-                                      SLIDING_WINDOW_OVERLAP)
+        patches = get_window_patches(frame_w, frame_h, SLIDING_WINDOW_GRID, SLIDING_WINDOW_OVERLAP)
 
     # Tracker
     tracker = None
@@ -1309,8 +1390,7 @@ def run_pipeline(args):
     # Smoother (EMA + ghost boxes)
     smoother = None
     if ENABLE_TEMPORAL_SMOOTHING:
-        smoother = TemporalSmoother(SMOOTHING_ALPHA, GHOST_FRAMES,
-                                     GHOST_EXPANSION)
+        smoother = TemporalSmoother(SMOOTHING_ALPHA, GHOST_FRAMES, GHOST_EXPANSION)
 
     # Struttura annotazioni
     annotations = {}
@@ -1333,45 +1413,40 @@ def run_pipeline(args):
 
         for fidx_str, frame_ann in json_data.get("frames", {}).items():
             fidx = int(fidx_str)
-            auto_polys = [
-                [tuple(pt) for pt in poly]
-                for poly in frame_ann.get("auto", [])
-            ]
-            manual_polys = [
-                [tuple(pt) for pt in poly]
-                for poly in frame_ann.get("manual", [])
-            ]
+            auto_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("auto", [])]
+            manual_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("manual", [])]
             # Ricalcola intensità per i poligoni auto
             intensities = []
             for poly in auto_polys:
                 ys = [pt[1] for pt in poly]
                 box_h = max(ys) - min(ys) if ys else 0
                 if ENABLE_ADAPTIVE_INTENSITY:
-                    intensities.append(compute_adaptive_intensity(
-                        box_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT))
+                    intensities.append(
+                        compute_adaptive_intensity(
+                            box_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT
+                        )
+                    )
                 else:
                     intensities.append(ANONYMIZATION_INTENSITY)
             annotations[fidx] = {
                 "auto": auto_polys,
                 "manual": manual_polys,
-                "intensities": intensities
+                "intensities": intensities,
             }
 
         total_polys = sum(
-            len(a.get("auto", [])) + len(a.get("manual", []))
-            for a in annotations.values()
+            len(a.get("auto", [])) + len(a.get("manual", [])) for a in annotations.values()
         )
-        print(f"\n  Annotazioni caricate: {len(annotations)} frame, "
-              f"{total_polys} poligoni totali")
+        print(
+            f"\n  Annotazioni caricate: {len(annotations)} frame, " f"{total_polys} poligoni totali"
+        )
 
         if args.normalize:
             # Normalizzazione: converti poligoni in rettangoli e unifica
             print(f"\n  Normalizzazione annotazioni...")
-            annotations, (n_before, n_after) = normalize_annotations(
-                annotations)
+            annotations, (n_before, n_after) = normalize_annotations(annotations)
             print(f"  Poligoni prima:  {n_before}")
-            print(f"  Rettangoli dopo: {n_after}  "
-                  f"(riduzione: {n_before - n_after})")
+            print(f"  Rettangoli dopo: {n_after}  " f"(riduzione: {n_before - n_after})")
             # Salta la revisione manuale, vai direttamente al rendering
             mode = "auto"
         else:
@@ -1414,8 +1489,7 @@ def run_pipeline(args):
                 frame = undistort_frame(frame, undist_map1, undist_map2)
 
             # [B] Miglioramento qualità (CLAHE condizionale, no sharpening)
-            enhanced = enhance_frame(frame, clahe_obj,
-                                     QUALITY_DARKNESS_THRESHOLD)
+            enhanced = enhance_frame(frame, clahe_obj, QUALITY_DARKNESS_THRESHOLD)
 
             # [C] Frame differencing
             motion_regions = None
@@ -1429,20 +1503,19 @@ def run_pipeline(args):
 
             if do_interpolation and prev_frame_for_interp is not None:
                 n_interp = max(1, int(INTERPOLATION_FPS_THRESHOLD / fps) - 1)
-                virtual_frames = interpolate_frames(prev_frame_for_interp,
-                                                    enhanced, n_interp)
+                virtual_frames = interpolate_frames(prev_frame_for_interp, enhanced, n_interp)
                 for vf in virtual_frames:
                     vf_boxes, _, _ = run_full_detection(
-                        model, vf, DETECTION_CONFIDENCE,
-                        frame_w, frame_h, motion_regions, patches)
+                        model, vf, DETECTION_CONFIDENCE, frame_w, frame_h, motion_regions, patches
+                    )
                     all_boxes.extend(vf_boxes)
 
             prev_frame_for_interp = enhanced.copy()
 
             # [D] Rilevamento multi-strategia sul frame reale
             real_boxes, sw_hits, ms_hits = run_full_detection(
-                model, enhanced, DETECTION_CONFIDENCE,
-                frame_w, frame_h, motion_regions, patches)
+                model, enhanced, DETECTION_CONFIDENCE, frame_w, frame_h, motion_regions, patches
+            )
             all_boxes.extend(real_boxes)
             sw_hits_total += sw_hits
             ms_hits_total += ms_hits
@@ -1453,8 +1526,7 @@ def run_pipeline(args):
             # [F] Tracking
             tracked = []
             if ENABLE_TRACKING and tracker is not None:
-                tracked = update_tracker(tracker, nms_boxes,
-                                         (frame_h, frame_w, 3))
+                tracked = update_tracker(tracker, nms_boxes, (frame_h, frame_w, 3))
             else:
                 for i, b in enumerate(nms_boxes):
                     tracked.append((i, b[0], b[1], b[2], b[3], b[4]))
@@ -1464,7 +1536,7 @@ def run_pipeline(args):
             frame_intensities = []
             active_ids = set()
 
-            for (tid, x1, y1, x2, y2, conf) in tracked:
+            for tid, x1, y1, x2, y2, conf in tracked:
                 active_ids.add(tid)
                 unique_track_ids.add(tid)
 
@@ -1480,12 +1552,12 @@ def run_pipeline(args):
                 box_h = y2 - y1
                 if ENABLE_ADAPTIVE_INTENSITY:
                     intensity = compute_adaptive_intensity(
-                        box_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT)
+                        box_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT
+                    )
                 else:
                     intensity = ANONYMIZATION_INTENSITY
 
-                polygon = box_to_polygon(x1, y1, x2, y2, PERSON_PADDING,
-                                         frame_w, frame_h)
+                polygon = box_to_polygon(x1, y1, x2, y2, PERSON_PADDING, frame_w, frame_h)
                 frame_polygons.append(polygon)
                 frame_intensities.append(intensity)
 
@@ -1495,7 +1567,7 @@ def run_pipeline(args):
                 smoother.clear_stale(active_ids)
 
                 # Ghost boxes: oscura posizioni previste per track persi
-                for (gtid, gx1, gy1, gx2, gy2) in smoother.get_ghost_boxes():
+                for gtid, gx1, gy1, gx2, gy2 in smoother.get_ghost_boxes():
                     gx1 = max(0, gx1)
                     gy1 = max(0, gy1)
                     gx2 = min(frame_w, gx2)
@@ -1505,13 +1577,13 @@ def run_pipeline(args):
                         continue
                     if ENABLE_ADAPTIVE_INTENSITY:
                         g_intensity = compute_adaptive_intensity(
-                            ghost_h, ANONYMIZATION_INTENSITY,
-                            ADAPTIVE_REFERENCE_HEIGHT)
+                            ghost_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT
+                        )
                     else:
                         g_intensity = ANONYMIZATION_INTENSITY
-                    ghost_poly = box_to_polygon(gx1, gy1, gx2, gy2,
-                                                PERSON_PADDING, frame_w,
-                                                frame_h)
+                    ghost_poly = box_to_polygon(
+                        gx1, gy1, gx2, gy2, PERSON_PADDING, frame_w, frame_h
+                    )
                     frame_polygons.append(ghost_poly)
                     frame_intensities.append(g_intensity)
 
@@ -1519,7 +1591,7 @@ def run_pipeline(args):
             annotations[frame_idx] = {
                 "auto": frame_polygons,
                 "manual": [],
-                "intensities": frame_intensities
+                "intensities": frame_intensities,
             }
 
             # [J] Statistiche
@@ -1530,15 +1602,15 @@ def run_pipeline(args):
 
             confs = [t[5] for t in tracked]
             report_data[frame_idx] = {
-                'frame_number': frame_idx,
-                'persons_detected': n_det,
-                'avg_confidence': float(np.mean(confs)) if confs else 0.0,
-                'min_confidence': float(min(confs)) if confs else 0.0,
-                'max_confidence': float(max(confs)) if confs else 0.0,
-                'motion_zones': len(motion_regions) if motion_regions else 0,
-                'sliding_window_hits': sw_hits_total,
-                'multiscale_hits': ms_hits_total,
-                'post_check_alerts': 0
+                "frame_number": frame_idx,
+                "persons_detected": n_det,
+                "avg_confidence": float(np.mean(confs)) if confs else 0.0,
+                "min_confidence": float(min(confs)) if confs else 0.0,
+                "max_confidence": float(max(confs)) if confs else 0.0,
+                "motion_zones": len(motion_regions) if motion_regions else 0,
+                "sliding_window_hits": sw_hits_total,
+                "multiscale_hits": ms_hits_total,
+                "post_check_alerts": 0,
             }
 
             frame_idx += 1
@@ -1556,17 +1628,18 @@ def run_pipeline(args):
         print(f"  Frame con 0 rilevamenti:        {frames_zero_det}  ({zero_pct:.1f}%)")
         print(f"  Confidenza media:               {avg_conf:.2f}")
         if corrupted_frames:
-            print(f"  ATTENZIONE: {len(corrupted_frames)} frame corrotti "
-                  f"(saltati): {corrupted_frames[:10]}"
-                  f"{'...' if len(corrupted_frames) > 10 else ''}")
+            print(
+                f"  ATTENZIONE: {len(corrupted_frames)} frame corrotti "
+                f"(saltati): {corrupted_frames[:10]}"
+                f"{'...' if len(corrupted_frames) > 10 else ''}"
+            )
 
     # ============================================
     # FASE 2 — AUTO REFINEMENT LOOP
     # ============================================
     actual_refinement_passes = 0
     refinement_annotations_added = 0
-    review_stats = {"added": 0, "removed": 0, "frames_modified": 0,
-                    "frames_reviewed": 0}
+    review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
 
     if ENABLE_POST_RENDER_CHECK:
         for pass_num in range(1, MAX_REFINEMENT_PASSES + 1):
@@ -1576,16 +1649,24 @@ def run_pipeline(args):
             # --- Rendering (sempre dal video originale, senza debug) ---
             print(f"\n[FASE 2/5] Auto refinement — rendering ({pass_label})...")
             render_video(
-                input_path, temp_video_path, annotations, fps,
-                frame_w, frame_h, method, fisheye_enabled,
-                undist_map1, undist_map2,
-                desc=f"Rendering ({pass_label})")
+                input_path,
+                temp_video_path,
+                annotations,
+                fps,
+                frame_w,
+                frame_h,
+                method,
+                fisheye_enabled,
+                undist_map1,
+                undist_map2,
+                desc=f"Rendering ({pass_label})",
+            )
 
             # --- Verifica post-rendering ---
             print(f"\n  Verifica post-rendering ({pass_label})...")
             alert_frames = run_post_render_check(
-                temp_video_path, model, POST_RENDER_CHECK_CONFIDENCE,
-                report_data)
+                temp_video_path, model, POST_RENDER_CHECK_CONFIDENCE, report_data
+            )
 
             if not alert_frames:
                 print(f"\n  Nessun rilevamento residuo — rendering OK.")
@@ -1593,16 +1674,17 @@ def run_pipeline(args):
 
             # --- Filtraggio artefatti ---
             genuine_alerts, n_artifacts, n_genuine = filter_artifact_detections(
-                alert_frames, annotations, REFINEMENT_OVERLAP_THRESHOLD)
+                alert_frames, annotations, REFINEMENT_OVERLAP_THRESHOLD
+            )
 
             print(f"\n  Rilevamenti post-render: {n_artifacts + n_genuine}")
-            print(f"  Artefatti filtrati (IoU >= {REFINEMENT_OVERLAP_THRESHOLD}): "
-                  f"{n_artifacts}")
+            print(
+                f"  Artefatti filtrati (IoU >= {REFINEMENT_OVERLAP_THRESHOLD}): " f"{n_artifacts}"
+            )
             print(f"  Residui genuini: {n_genuine}")
 
             if not genuine_alerts:
-                print(f"  Tutti i rilevamenti sono artefatti della pixelazione "
-                      f"— rendering OK.")
+                print(f"  Tutti i rilevamenti sono artefatti della pixelazione " f"— rendering OK.")
                 break
 
             if pass_num == MAX_REFINEMENT_PASSES:
@@ -1620,25 +1702,23 @@ def run_pipeline(args):
             added_this_pass = 0
             for fidx, boxes in genuine_alerts:
                 if fidx not in annotations:
-                    annotations[fidx] = {"auto": [], "manual": [],
-                                         "intensities": []}
+                    annotations[fidx] = {"auto": [], "manual": [], "intensities": []}
                 for box in boxes:
                     x1, y1, x2, y2 = box[:4]
                     poly = box_to_polygon(
-                        x1, y1, x2, y2, padding=PERSON_PADDING,
-                        frame_w=frame_w, frame_h=frame_h)
+                        x1, y1, x2, y2, padding=PERSON_PADDING, frame_w=frame_w, frame_h=frame_h
+                    )
                     annotations[fidx]["auto"].append(poly)
                     if ENABLE_ADAPTIVE_INTENSITY:
                         box_h = y2 - y1
                         inten = compute_adaptive_intensity(
-                            box_h, ANONYMIZATION_INTENSITY,
-                            ADAPTIVE_REFERENCE_HEIGHT)
+                            box_h, ANONYMIZATION_INTENSITY, ADAPTIVE_REFERENCE_HEIGHT
+                        )
                         annotations[fidx]["intensities"].append(inten)
                     added_this_pass += 1
 
             refinement_annotations_added += added_this_pass
-            print(f"\n  Aggiunte {added_this_pass} annotazioni — "
-                  f"ri-rendering in corso...")
+            print(f"\n  Aggiunte {added_this_pass} annotazioni — " f"ri-rendering in corso...")
     else:
         print(f"\n[FASE 2/5] Auto refinement — saltato (verifica disabilitata)")
 
@@ -1646,30 +1726,85 @@ def run_pipeline(args):
     # FASE 3 — REVISIONE MANUALE
     # ============================================
     if mode == "manual":
-        print(f"\n[FASE 3/5] Revisione manuale — apertura interfaccia...")
-        print("  -> Usa Spazio per navigare, Click per disegnare, "
-              "D per eliminare, Q per confermare.")
+        web_review_state = getattr(args, "_review_state", None)
+        if web_review_state is not None:
+            # --- REVIEW VIA WEB ---
+            print(f"\n[FASE 3/5] Revisione manuale — in attesa di conferma dal browser...")
 
-        from manual_reviewer import run_manual_review
+            web_review_state.setup(
+                input_path,
+                annotations,
+                total_frames,
+                frame_w,
+                frame_h,
+                fps,
+                fisheye_enabled,
+                undist_map1,
+                undist_map2,
+            )
 
-        config = {
-            "auto_color": REVIEW_AUTO_COLOR,
-            "manual_color": REVIEW_MANUAL_COLOR,
-            "drawing_color": REVIEW_DRAWING_COLOR,
-            "fill_alpha": REVIEW_FILL_ALPHA,
-            "max_width": REVIEW_WINDOW_MAX_WIDTH,
-        }
-        annotations, review_stats = run_manual_review(
-            input_path, annotations, config, fisheye_enabled,
-            undist_map1, undist_map2)
+            sse_mgr = getattr(args, "_sse_manager")
+            web_job_id = getattr(args, "_job_id")
+            sse_mgr.emit(
+                web_job_id,
+                "review_ready",
+                {
+                    "total_frames": total_frames,
+                    "frame_w": frame_w,
+                    "frame_h": frame_h,
+                    "fps": fps,
+                },
+            )
 
-        print(f"\n  Revisione completata:")
-        print(f"  Frame revisionati:     "
-              f"{review_stats['frames_reviewed']} / {total_frames}")
-        print(f"  Poligoni aggiunti:     {review_stats['added']}")
-        print(f"  Poligoni rimossi:      {review_stats['removed']}")
-        print(f"  Frame modificati:      {review_stats['frames_modified']}  "
-              f"({review_stats['frames_modified'] / total_frames * 100:.1f}%)")
+            # Blocca fino a conferma utente
+            original_annotations = {
+                fidx: {
+                    "auto": list(fdata.get("auto", [])),
+                    "manual": list(fdata.get("manual", [])),
+                }
+                for fidx, fdata in annotations.items()
+            }
+            annotations = web_review_state.wait_for_completion()
+            review_stats = _compute_review_stats(original_annotations, annotations, total_frames)
+
+            print(f"\n  Revisione completata:")
+            print(f"  Poligoni aggiunti:     {review_stats['added']}")
+            print(f"  Poligoni rimossi:      {review_stats['removed']}")
+            print(
+                f"  Frame modificati:      {review_stats['frames_modified']}  "
+                f"({review_stats['frames_modified'] / total_frames * 100:.1f}%)"
+            )
+        else:
+            # --- REVIEW CLI (OpenCV nativo) ---
+            print(f"\n[FASE 3/5] Revisione manuale — apertura interfaccia...")
+            print(
+                "  -> Usa Spazio per navigare, Click per disegnare, "
+                "D per eliminare, Q per confermare."
+            )
+
+            from manual_reviewer import run_manual_review
+
+            config = {
+                "auto_color": REVIEW_AUTO_COLOR,
+                "manual_color": REVIEW_MANUAL_COLOR,
+                "drawing_color": REVIEW_DRAWING_COLOR,
+                "fill_alpha": REVIEW_FILL_ALPHA,
+                "max_width": REVIEW_WINDOW_MAX_WIDTH,
+            }
+            annotations, review_stats = run_manual_review(
+                input_path, annotations, config, fisheye_enabled, undist_map1, undist_map2
+            )
+
+            print(f"\n  Revisione completata:")
+            print(
+                f"  Frame revisionati:     " f"{review_stats['frames_reviewed']} / {total_frames}"
+            )
+            print(f"  Poligoni aggiunti:     {review_stats['added']}")
+            print(f"  Poligoni rimossi:      {review_stats['removed']}")
+            print(
+                f"  Frame modificati:      {review_stats['frames_modified']}  "
+                f"({review_stats['frames_modified'] / total_frames * 100:.1f}%)"
+            )
     else:
         print(f"\n[FASE 3/5] Revisione manuale — saltata (modalita' auto)")
 
@@ -1678,11 +1813,19 @@ def run_pipeline(args):
     # ============================================
     print(f"\n[FASE 4/5] Rendering finale...")
     render_video(
-        input_path, temp_video_path, annotations, fps,
-        frame_w, frame_h, method, fisheye_enabled,
-        undist_map1, undist_map2,
+        input_path,
+        temp_video_path,
+        annotations,
+        fps,
+        frame_w,
+        frame_h,
+        method,
+        fisheye_enabled,
+        undist_map1,
+        undist_map2,
         debug_path=temp_debug_path if enable_debug else None,
-        desc="Rendering finale")
+        desc="Rendering finale",
+    )
 
     # ============================================
     # FASE 5 — POST-PROCESSING
@@ -1703,13 +1846,21 @@ def run_pipeline(args):
 
         # Report CSV
         if enable_report:
-            with open(report_path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=[
-                    'frame_number', 'persons_detected', 'avg_confidence',
-                    'min_confidence', 'max_confidence',
-                    'motion_zones', 'sliding_window_hits', 'multiscale_hits',
-                    'post_check_alerts'
-                ])
+            with open(report_path, "w", newline="") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "frame_number",
+                        "persons_detected",
+                        "avg_confidence",
+                        "min_confidence",
+                        "max_confidence",
+                        "motion_zones",
+                        "sliding_window_hits",
+                        "multiscale_hits",
+                        "post_check_alerts",
+                    ],
+                )
                 writer.writeheader()
                 for fidx in sorted(report_data.keys()):
                     writer.writerow(report_data[fidx])
@@ -1723,7 +1874,7 @@ def run_pipeline(args):
                     "filename": Path(input_path).name,
                     "total_frames": total_frames,
                     "fps": fps,
-                    "resolution": [frame_w, frame_h]
+                    "resolution": [frame_w, frame_h],
                 },
                 "pipeline_config": {
                     "yolo_model": YOLO_MODEL,
@@ -1737,38 +1888,29 @@ def run_pipeline(args):
                     "base_intensity": ANONYMIZATION_INTENSITY,
                     "adaptive_reference_height": ADAPTIVE_REFERENCE_HEIGHT,
                     "smoothing_alpha": SMOOTHING_ALPHA,
-                    "ghost_frames": GHOST_FRAMES
+                    "ghost_frames": GHOST_FRAMES,
                 },
                 "refinement": {
                     "max_passes": MAX_REFINEMENT_PASSES,
                     "actual_passes": actual_refinement_passes,
                     "annotations_added": refinement_annotations_added,
-                    "overlap_threshold": REFINEMENT_OVERLAP_THRESHOLD
+                    "overlap_threshold": REFINEMENT_OVERLAP_THRESHOLD,
                 },
                 "mode": mode,
-                "generated": datetime.now().isoformat(timespec='seconds'),
+                "generated": datetime.now().isoformat(timespec="seconds"),
                 "review_stats": review_stats,
-                "frames": {}
+                "frames": {},
             }
             for fidx, ann in annotations.items():
-                auto_list = [
-                    [list(pt) for pt in poly]
-                    for poly in ann.get("auto", [])
-                ]
-                manual_list = [
-                    [list(pt) for pt in poly]
-                    for poly in ann.get("manual", [])
-                ]
-                frame_data = {
-                    "auto": auto_list,
-                    "manual": manual_list
-                }
+                auto_list = [[list(pt) for pt in poly] for poly in ann.get("auto", [])]
+                manual_list = [[list(pt) for pt in poly] for poly in ann.get("manual", [])]
+                frame_data = {"auto": auto_list, "manual": manual_list}
                 # Salva anche le intensità per evitare ricalcolo
                 intensities = ann.get("intensities", [])
                 if intensities:
                     frame_data["intensities"] = intensities
                 json_annotations["frames"][str(fidx)] = frame_data
-            with open(json_path, 'w') as f:
+            with open(json_path, "w") as f:
                 json.dump(json_annotations, f, indent=2)
 
     finally:
@@ -1801,32 +1943,44 @@ def run_pipeline(args):
 # CLI
 # ============================================================
 
+
 def parse_args():
     """Parser argomenti CLI."""
     parser = argparse.ArgumentParser(
         description=f"Person Anonymizer v{VERSION} — "
-                    "Oscuramento automatico persone in video di sorveglianza",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        "Oscuramento automatico persone in video di sorveglianza",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("input", help="Percorso del video da elaborare")
-    parser.add_argument("-M", "--mode", choices=["manual", "auto"],
-                        default=None,
-                        help="Modalita' operativa (default: da config)")
-    parser.add_argument("-o", "--output", default=None,
-                        help="Percorso file di output")
-    parser.add_argument("-m", "--method", choices=["pixelation", "blur"],
-                        default=None,
-                        help="Metodo di oscuramento (default: da config)")
-    parser.add_argument("--no-debug", action="store_true",
-                        help="Disabilita video debug")
-    parser.add_argument("--no-report", action="store_true",
-                        help="Disabilita CSV report")
-    parser.add_argument("--review", default=None,
-                        help="Ricarica annotazioni da JSON esistente, "
-                             "salta la detection e apre solo la revisione manuale")
-    parser.add_argument("--normalize", action="store_true",
-                        help="Normalizza i poligoni in rettangoli e unifica "
-                             "le aree sovrapposte. Richiede --review.")
+    parser.add_argument(
+        "-M",
+        "--mode",
+        choices=["manual", "auto"],
+        default=None,
+        help="Modalita' operativa (default: da config)",
+    )
+    parser.add_argument("-o", "--output", default=None, help="Percorso file di output")
+    parser.add_argument(
+        "-m",
+        "--method",
+        choices=["pixelation", "blur"],
+        default=None,
+        help="Metodo di oscuramento (default: da config)",
+    )
+    parser.add_argument("--no-debug", action="store_true", help="Disabilita video debug")
+    parser.add_argument("--no-report", action="store_true", help="Disabilita CSV report")
+    parser.add_argument(
+        "--review",
+        default=None,
+        help="Ricarica annotazioni da JSON esistente, "
+        "salta la detection e apre solo la revisione manuale",
+    )
+    parser.add_argument(
+        "--normalize",
+        action="store_true",
+        help="Normalizza i poligoni in rettangoli e unifica "
+        "le aree sovrapposte. Richiede --review.",
+    )
     return parser.parse_args()
 
 
