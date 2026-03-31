@@ -4,12 +4,14 @@ Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
 import os
+import re
 import sys
 import uuid
 import json
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, Response, send_file, stream_with_context
+from werkzeug.utils import secure_filename
 
 # Aggiungi parent dir al path per importare person_anonymizer
 PARENT_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +32,31 @@ SUPPORTED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"}
 
 sse_manager = SSEManager()
 pipeline_runner = PipelineRunner(sse_manager, OUTPUT_DIR)
+
+
+# ---------- Helper sicurezza ----------
+
+
+def validate_job_id(job_id: str) -> bool:
+    """Verifica che job_id sia un hex di 12 caratteri minuscoli."""
+    if not job_id:
+        return False
+    return bool(re.match(r"^[a-f0-9]{12}$", job_id))
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'"
+    )
+    return response
 
 
 # ---------- Pagina principale ----------
@@ -68,7 +95,9 @@ def upload_video():
     job_dir = UPLOAD_DIR / job_id
     job_dir.mkdir(exist_ok=True)
 
-    safe_name = Path(f.filename).name
+    safe_name = secure_filename(f.filename)
+    if not safe_name:
+        return jsonify({"error": "Nome file non valido"}), 400
     dest = job_dir / safe_name
     f.save(str(dest))
 
@@ -94,15 +123,20 @@ def upload_json():
     job_id = request.form.get("job_id")
     if not job_id:
         return jsonify({"error": "job_id mancante"}), 400
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
 
     job_dir = UPLOAD_DIR / job_id
     if not job_dir.exists():
         return jsonify({"error": "Job non trovato"}), 404
 
-    dest = job_dir / Path(f.filename).name
+    safe_name = secure_filename(f.filename)
+    if not safe_name:
+        return jsonify({"error": "Nome file non valido"}), 400
+    dest = job_dir / safe_name
     f.save(str(dest))
 
-    return jsonify({"json_path": str(dest), "filename": f.filename})
+    return jsonify({"json_path": str(dest), "filename": safe_name})
 
 
 # ---------- Avvia pipeline ----------
@@ -117,10 +151,16 @@ def start_pipeline():
     job_id = data.get("job_id")
     if not job_id:
         return jsonify({"error": "job_id mancante"}), 400
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
 
     video_path = data.get("video_path")
     if not video_path or not Path(video_path).exists():
         return jsonify({"error": "Video non trovato"}), 404
+
+    resolved = Path(video_path).resolve()
+    if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
+        return jsonify({"error": "Path non autorizzato"}), 403
 
     config = data.get("config", {})
     review_json = data.get("review_json")
@@ -138,6 +178,8 @@ def start_pipeline():
 @app.route("/api/progress")
 def progress_stream():
     job_id = request.args.get("job_id")
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
 
     def generate():
         q = sse_manager.subscribe(job_id)
@@ -167,6 +209,8 @@ def progress_stream():
 def stop_pipeline():
     data = request.get_json() or {}
     job_id = data.get("job_id")
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
     ok = pipeline_runner.stop(job_id)
     if ok:
         return jsonify({"status": "stopping"})
@@ -251,50 +295,14 @@ def review_confirm():
 @app.route("/api/config/defaults")
 def config_defaults():
     """Restituisce i valori di default di tutti i parametri configurabili."""
-    import person_anonymizer as pa
+    from config import PipelineConfig
+    from dataclasses import asdict
 
-    defaults = {
-        "operation_mode": pa.OPERATION_MODE,
-        "anonymization_method": pa.ANONYMIZATION_METHOD,
-        "anonymization_intensity": pa.ANONYMIZATION_INTENSITY,
-        "person_padding": pa.PERSON_PADDING,
-        "edge_padding_multiplier": pa.EDGE_PADDING_MULTIPLIER,
-        "edge_threshold": pa.EDGE_THRESHOLD,
-        "detection_confidence": pa.DETECTION_CONFIDENCE,
-        "nms_iou_internal": pa.NMS_IOU_INTERNAL,
-        "nms_iou_threshold": pa.NMS_IOU_THRESHOLD,
-        "yolo_model": pa.YOLO_MODEL,
-        "enable_fisheye_correction": pa.ENABLE_FISHEYE_CORRECTION,
-        "enable_motion_detection": pa.ENABLE_MOTION_DETECTION,
-        "motion_threshold": pa.MOTION_THRESHOLD,
-        "motion_min_area": pa.MOTION_MIN_AREA,
-        "motion_padding": pa.MOTION_PADDING,
-        "enable_sliding_window": pa.ENABLE_SLIDING_WINDOW,
-        "sliding_window_grid": pa.SLIDING_WINDOW_GRID,
-        "sliding_window_overlap": pa.SLIDING_WINDOW_OVERLAP,
-        "inference_scales": pa.INFERENCE_SCALES,
-        "tta_augmentations": pa.TTA_AUGMENTATIONS,
-        "quality_clahe_clip": pa.QUALITY_CLAHE_CLIP,
-        "quality_clahe_grid": list(pa.QUALITY_CLAHE_GRID),
-        "quality_darkness_threshold": pa.QUALITY_DARKNESS_THRESHOLD,
-        "enable_tracking": pa.ENABLE_TRACKING,
-        "track_max_age": pa.TRACK_MAX_AGE,
-        "track_match_thresh": pa.TRACK_MATCH_THRESH,
-        "enable_temporal_smoothing": pa.ENABLE_TEMPORAL_SMOOTHING,
-        "smoothing_alpha": pa.SMOOTHING_ALPHA,
-        "ghost_frames": pa.GHOST_FRAMES,
-        "ghost_expansion": pa.GHOST_EXPANSION,
-        "enable_adaptive_intensity": pa.ENABLE_ADAPTIVE_INTENSITY,
-        "adaptive_reference_height": pa.ADAPTIVE_REFERENCE_HEIGHT,
-        "enable_subframe_interpolation": pa.ENABLE_SUBFRAME_INTERPOLATION,
-        "interpolation_fps_threshold": pa.INTERPOLATION_FPS_THRESHOLD,
-        "enable_post_render_check": pa.ENABLE_POST_RENDER_CHECK,
-        "post_render_check_confidence": pa.POST_RENDER_CHECK_CONFIDENCE,
-        "max_refinement_passes": pa.MAX_REFINEMENT_PASSES,
-        "refinement_overlap_threshold": pa.REFINEMENT_OVERLAP_THRESHOLD,
-        "enable_debug_video": pa.ENABLE_DEBUG_VIDEO,
-        "enable_confidence_report": pa.ENABLE_CONFIDENCE_REPORT,
-    }
+    cfg = PipelineConfig()
+    # Converti tuple in liste per la serializzazione JSON
+    defaults = {}
+    for k, v in asdict(cfg).items():
+        defaults[k] = list(v) if isinstance(v, tuple) else v
     return jsonify(defaults)
 
 
@@ -303,6 +311,8 @@ def config_defaults():
 
 @app.route("/api/download/<job_id>/<file_type>")
 def download_file(job_id, file_type):
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
     job_out = OUTPUT_DIR / job_id
     if not job_out.exists():
         return jsonify({"error": "Job output non trovato"}), 404
@@ -330,6 +340,8 @@ def download_file(job_id, file_type):
 
 @app.route("/api/outputs/<job_id>")
 def list_outputs(job_id):
+    if not validate_job_id(job_id):
+        return jsonify({"error": "job_id non valido"}), 400
     job_out = OUTPUT_DIR / job_id
     if not job_out.exists():
         return jsonify({"files": []})

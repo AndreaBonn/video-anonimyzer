@@ -64,13 +64,25 @@
     function showToast(message, type = "info", duration = 5000) {
         const toast = document.createElement("div");
         toast.className = `toast toast-${type}`;
-        toast.innerHTML = `
-            ${TOAST_ICONS[type] || TOAST_ICONS.info}
-            <span class="toast-message">${message}</span>
-            <button class="toast-close" aria-label="Chiudi">&times;</button>
-        `;
 
-        const closeBtn = toast.querySelector(".toast-close");
+        // Icona (HTML statico sicuro)
+        const iconWrapper = document.createElement("span");
+        iconWrapper.innerHTML = TOAST_ICONS[type] || TOAST_ICONS.info;
+        toast.appendChild(iconWrapper);
+
+        // Messaggio (textContent = sicuro contro XSS)
+        const msgSpan = document.createElement("span");
+        msgSpan.className = "toast-message";
+        msgSpan.textContent = message;
+        toast.appendChild(msgSpan);
+
+        // Close button
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "toast-close";
+        closeBtn.setAttribute("aria-label", "Chiudi");
+        closeBtn.textContent = "\u00D7";
+        toast.appendChild(closeBtn);
+
         const dismiss = () => {
             toast.classList.add("toast-out");
             toast.addEventListener("animationend", () => toast.remove());
@@ -536,12 +548,24 @@
                 data.files.forEach((f) => {
                     const item = document.createElement("div");
                     item.className = "result-item";
-                    item.innerHTML = `
-                        <span class="result-name">${f.name}</span>
-                        <span class="result-size">${f.size_mb} MB</span>
-                        <a href="/api/download/${jid}/${f.type}" class="btn-download"
-                           download="${f.name}">Scarica</a>
-                    `;
+
+                    const nameSpan = document.createElement("span");
+                    nameSpan.className = "result-name";
+                    nameSpan.textContent = f.name;
+
+                    const sizeSpan = document.createElement("span");
+                    sizeSpan.className = "result-size";
+                    sizeSpan.textContent = f.size_mb + " MB";
+
+                    const link = document.createElement("a");
+                    link.className = "btn-download";
+                    link.href = "/api/download/" + jid + "/" + encodeURIComponent(f.type);
+                    link.download = f.name;
+                    link.textContent = "Scarica";
+
+                    item.appendChild(nameSpan);
+                    item.appendChild(sizeSpan);
+                    item.appendChild(link);
                     resultsEl.appendChild(item);
                 });
                 resultsCard.classList.remove("hidden");

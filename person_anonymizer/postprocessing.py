@@ -1,0 +1,356 @@
+"""
+Post-processing del video anonimizzato.
+
+Contiene le funzioni per la codifica H.264 con/senza reintegro audio,
+la verifica post-rendering tramite secondo passaggio YOLO, il filtro
+degli artefatti di pixelazione e la normalizzazione delle annotazioni
+(merge dei poligoni sovrapposti con ricalcolo intensità adattiva).
+"""
+
+import shutil
+
+import cv2
+import ffmpeg
+import numpy as np
+from tqdm import tqdm
+
+from anonymization import compute_adaptive_intensity, polygon_to_bbox
+from config import PipelineConfig
+from detection import apply_nms, compute_iou_boxes, detect_and_rescale
+
+
+def encode_with_audio(video_no_audio, original_video, output_path):
+    """
+    Codifica il video in H.264 (libx264) con qualità alta e reintegra l'audio.
+
+    Usa CRF 18 (visually lossless) e preset 'slow' per massima qualità.
+    Il codec mp4v usato da cv2.VideoWriter è MPEG-4 Part 2 (2001) e degrada
+    significativamente la qualità; H.264 offre qualità nettamente superiore
+    a parità di bitrate.
+    """
+    try:
+        video_in = ffmpeg.input(video_no_audio)
+        audio_in = ffmpeg.input(original_video).audio
+        (
+            ffmpeg.output(
+                video_in,
+                audio_in,
+                output_path,
+                vcodec="libx264",
+                crf=18,
+                preset="slow",
+                pix_fmt="yuv420p",
+                acodec="aac",
+                audio_bitrate="192k",
+            )
+            .overwrite_output()
+            .run(quiet=True)
+        )
+    except ffmpeg.Error:
+        # Fallback: tenta senza audio
+        try:
+            video_in = ffmpeg.input(video_no_audio)
+            (
+                ffmpeg.output(
+                    video_in,
+                    output_path,
+                    vcodec="libx264",
+                    crf=18,
+                    preset="slow",
+                    pix_fmt="yuv420p",
+                )
+                .overwrite_output()
+                .run(quiet=True)
+            )
+        except ffmpeg.Error:
+            shutil.copy(video_no_audio, output_path)
+
+
+def encode_without_audio(video_no_audio, output_path):
+    """Codifica il video in H.264 senza audio."""
+    try:
+        video_in = ffmpeg.input(video_no_audio)
+        (
+            ffmpeg.output(
+                video_in, output_path, vcodec="libx264", crf=18, preset="slow", pix_fmt="yuv420p"
+            )
+            .overwrite_output()
+            .run(quiet=True)
+        )
+    except ffmpeg.Error:
+        shutil.copy(video_no_audio, output_path)
+
+
+def run_post_render_check(anonymized_video_path, model, confidence, report_data, config: PipelineConfig, check_scales=None):
+    """
+    Secondo passaggio YOLO sul video oscurato, con multi-scale.
+
+    Usa le stesse scale della detection originale per intercettare
+    anche persone piccole che una singola scala non rileva.
+
+    Parameters
+    ----------
+    anonymized_video_path : str
+        Percorso video anonimizzato.
+    model : YOLO
+        Modello YOLO caricato.
+    confidence : float
+        Soglia di confidenza.
+    report_data : dict
+        Dati report per aggiornamento alerting.
+    config : PipelineConfig
+        Configurazione della pipeline (soglia NMS).
+    check_scales : list of float, optional
+        Scale di verifica (default: [1.0, 2.0]).
+
+    Returns
+    -------
+    list of tuple
+        Ogni tupla: (frame_idx, count, nms_boxes) dove nms_boxes è la lista
+        dei box [x1, y1, x2, y2, conf] rilevati nel frame.
+    """
+    if check_scales is None:
+        check_scales = [1.0, 2.0]
+
+    cap = cv2.VideoCapture(anonymized_video_path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    alert_frames = []
+    frame_idx = 0
+
+    pbar = tqdm(total=total, desc="Verifica", unit=" frame")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        all_boxes = []
+        for scale in check_scales:
+            if scale == 1.0:
+                results = model(frame, conf=confidence, classes=[0], verbose=False)
+                for box in results[0].boxes:
+                    x1, y1, x2, y2 = map(float, box.xyxy[0])
+                    all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
+            else:
+                new_w = int(frame_w * scale)
+                new_h = int(frame_h * scale)
+                scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+                boxes = detect_and_rescale(model, scaled, confidence, scale)
+                all_boxes.extend(boxes)
+
+        nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
+
+        if len(nms_boxes) > 0:
+            alert_frames.append((frame_idx, len(nms_boxes), nms_boxes))
+            if frame_idx in report_data:
+                report_data[frame_idx]["post_check_alerts"] = len(nms_boxes)
+
+        frame_idx += 1
+        pbar.update(1)
+    pbar.close()
+
+    cap.release()
+    return alert_frames
+
+
+def filter_artifact_detections(alert_frames, annotations, iou_threshold):
+    """
+    Filtra rilevamenti post-render che sono artefatti della pixelazione.
+
+    Un rilevamento che si sovrappone (IoU >= soglia) con un'area già
+    anonimizzata è quasi certamente un artefatto: YOLO interpreta la
+    pixelazione come una persona. I rilevamenti genuini sono quelli che
+    NON si sovrappongono significativamente con aree già oscurate.
+
+    Parameters
+    ----------
+    alert_frames : list of tuple
+        Ogni tupla: (frame_idx, count, nms_boxes).
+    annotations : dict
+        Annotazioni correnti {frame_idx: {"auto": [...], "manual": [...]}}.
+    iou_threshold : float
+        Soglia IoU per considerare un rilevamento come artefatto.
+
+    Returns
+    -------
+    genuine_alerts : list of tuple
+        (frame_idx, genuine_boxes) solo frame con rilevamenti genuini.
+    total_artifacts : int
+        Numero totale di artefatti filtrati.
+    total_genuine : int
+        Numero totale di rilevamenti genuini.
+    """
+    genuine_alerts = []
+    total_artifacts = 0
+    total_genuine = 0
+
+    for frame_idx, count, nms_boxes in alert_frames:
+        ann = annotations.get(frame_idx, {"auto": [], "manual": []})
+        existing_bboxes = []
+        for poly in ann.get("auto", []):
+            existing_bboxes.append(polygon_to_bbox(poly))
+        for poly in ann.get("manual", []):
+            existing_bboxes.append(polygon_to_bbox(poly))
+
+        genuine_boxes = []
+        for det_box in nms_boxes:
+            det_bbox = det_box[:4]
+            is_artifact = False
+            for ex_bbox in existing_bboxes:
+                if compute_iou_boxes(det_bbox, ex_bbox) >= iou_threshold:
+                    is_artifact = True
+                    break
+            if is_artifact:
+                total_artifacts += 1
+            else:
+                genuine_boxes.append(det_box)
+                total_genuine += 1
+
+        if genuine_boxes:
+            genuine_alerts.append((frame_idx, genuine_boxes))
+
+    return genuine_alerts, total_artifacts, total_genuine
+
+
+def _rects_overlap(r1, r2):
+    """
+    Verifica se due rettangoli (x, y, w, h) si sovrappongono.
+
+    Parameters
+    ----------
+    r1 : tuple
+        Primo rettangolo (x, y, w, h).
+    r2 : tuple
+        Secondo rettangolo (x, y, w, h).
+
+    Returns
+    -------
+    bool
+        True se i rettangoli si sovrappongono.
+    """
+    x1, y1, w1, h1 = r1
+    x2, y2, w2, h2 = r2
+    return not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1)
+
+
+def _merge_rects(r1, r2):
+    """
+    Unifica due rettangoli (x, y, w, h) nel bounding box che li contiene.
+
+    Parameters
+    ----------
+    r1 : tuple
+        Primo rettangolo (x, y, w, h).
+    r2 : tuple
+        Secondo rettangolo (x, y, w, h).
+
+    Returns
+    -------
+    tuple
+        Rettangolo unificato (x, y, w, h).
+    """
+    x1, y1, w1, h1 = r1
+    x2, y2, w2, h2 = r2
+    nx = min(x1, x2)
+    ny = min(y1, y2)
+    nx2 = max(x1 + w1, x2 + w2)
+    ny2 = max(y1 + h1, y2 + h2)
+    return (nx, ny, nx2 - nx, ny2 - ny)
+
+
+def _merge_overlapping_rects(rects):
+    """
+    Merge iterativo di rettangoli sovrapposti.
+
+    Parameters
+    ----------
+    rects : list of tuple
+        Lista di rettangoli (x, y, w, h).
+
+    Returns
+    -------
+    list of tuple
+        Rettangoli non sovrapposti dopo il merge.
+    """
+    merged = list(rects)
+    changed = True
+    while changed:
+        changed = False
+        new_merged = []
+        used = [False] * len(merged)
+        for i in range(len(merged)):
+            if used[i]:
+                continue
+            current = merged[i]
+            for j in range(i + 1, len(merged)):
+                if used[j]:
+                    continue
+                if _rects_overlap(current, merged[j]):
+                    current = _merge_rects(current, merged[j])
+                    used[j] = True
+                    changed = True
+            new_merged.append(current)
+        merged = new_merged
+    return merged
+
+
+def normalize_annotations(annotations, config: PipelineConfig):
+    """
+    Normalizza le annotazioni: converte poligoni in rettangoli
+    e unifica le aree sovrapposte.
+
+    Parameters
+    ----------
+    annotations : dict
+        Dizionario {frame_idx: {"auto": [...], "manual": [...], "intensities": [...]}}.
+    config : PipelineConfig
+        Configurazione della pipeline (intensità adattiva, reference height).
+
+    Returns
+    -------
+    dict
+        Annotazioni normalizzate con rettangoli non sovrapposti.
+    tuple
+        (poligoni_prima, poligoni_dopo) per statistiche.
+    """
+    total_before = 0
+    total_after = 0
+    normalized = {}
+
+    for fidx, ann in annotations.items():
+        all_polys = ann.get("auto", []) + ann.get("manual", [])
+        total_before += len(all_polys)
+
+        if not all_polys:
+            normalized[fidx] = {"auto": [], "manual": [], "intensities": []}
+            continue
+
+        # Converti ogni poligono nel suo bounding rectangle (x, y, w, h)
+        rects = []
+        for poly in all_polys:
+            pts = np.array(poly, dtype=np.int32)
+            x, y, w, h = cv2.boundingRect(pts)
+            rects.append((x, y, w, h))
+
+        # Merge iterativo dei rettangoli sovrapposti
+        merged = _merge_overlapping_rects(rects)
+        total_after += len(merged)
+
+        # Converti rettangoli in poligoni e ricalcola intensità
+        new_polys = []
+        new_intensities = []
+        for x, y, w, h in merged:
+            poly = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+            new_polys.append(poly)
+            if config.enable_adaptive_intensity:
+                intensity = compute_adaptive_intensity(
+                    h, config.anonymization_intensity, config.adaptive_reference_height
+                )
+            else:
+                intensity = config.anonymization_intensity
+            new_intensities.append(intensity)
+
+        normalized[fidx] = {"auto": new_polys, "manual": [], "intensities": new_intensities}
+
+    return normalized, (total_before, total_after)

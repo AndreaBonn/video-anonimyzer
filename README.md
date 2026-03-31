@@ -400,8 +400,8 @@ I parametri di configurazione si trovano nella sezione `CONFIGURAZIONE` all'iniz
 | Parametro                | Default              | Descrizione                                  |
 | ------------------------ | -------------------- | -------------------------------------------- |
 | `YOLO_MODEL`             | `yolov8x.pt`         | Modello YOLO (x = extra large, piu preciso)  |
-| `DETECTION_CONFIDENCE`   | 0.35                 | Soglia minima di confidenza per le detection |
-| `NMS_IOU_THRESHOLD`      | 0.45                 | Soglia IoU per la Non-Maximum Suppression    |
+| `DETECTION_CONFIDENCE`   | 0.20                 | Soglia minima di confidenza per le detection |
+| `NMS_IOU_THRESHOLD`      | 0.55                 | Soglia IoU per la Non-Maximum Suppression    |
 | `INFERENCE_SCALES`       | [1.0, 1.5, 2.0, 2.5] | Scale di inferenza multi-scala               |
 | `SLIDING_WINDOW_GRID`    | 3                    | Dimensione griglia sliding window (3x3)      |
 | `SLIDING_WINDOW_OVERLAP` | 0.3                  | Sovrapposizione tra patch (30%)              |
@@ -421,7 +421,7 @@ I parametri di configurazione si trovano nella sezione `CONFIGURAZIONE` all'iniz
 | ----------------------- | ------- | ---------------------------------------------------- |
 | `TRACK_MAX_AGE`         | 45      | Frame massimi per mantenere un track senza detection |
 | `TRACK_MATCH_THRESH`    | 0.6     | Soglia di matching per il tracker                    |
-| `SMOOTHING_WINDOW_SIZE` | 15      | Ampiezza della finestra di media mobile              |
+| `SMOOTHING_ALPHA`       | 0.35    | Peso EMA (0-1): più alto = più reattivo              |
 
 ### Verifica post-rendering
 
@@ -438,7 +438,14 @@ I parametri di configurazione si trovano nella sezione `CONFIGURAZIONE` all'iniz
 ```
 video-anonimizer/
 ├── person_anonymizer/
-│   ├── person_anonymizer.py      # Pipeline principale
+│   ├── person_anonymizer.py      # Pipeline principale (orchestrazione)
+│   ├── config.py                 # PipelineConfig dataclass
+│   ├── preprocessing.py          # CLAHE, undistortion, motion detection
+│   ├── detection.py              # Sliding window, multi-scale, NMS
+│   ├── tracking.py               # ByteTrack wrapper, temporal smoother
+│   ├── anonymization.py          # Pixelation/blur, intensità adattiva
+│   ├── rendering.py              # Rendering video, debug overlay
+│   ├── postprocessing.py         # Encoding audio, post-render check
 │   ├── manual_reviewer.py        # Interfaccia revisione manuale
 │   ├── camera_calibration.py     # Calibrazione camera fish-eye
 │   ├── requirements.txt          # Dipendenze Python
@@ -446,18 +453,21 @@ video-anonimizer/
 │       ├── app.py                # Server Flask e API REST
 │       ├── pipeline_runner.py    # Esecutore pipeline in thread separato
 │       ├── sse_manager.py        # Distribuzione eventi Server-Sent Events
+│       ├── review_state.py       # Stato revisione thread-safe
 │       ├── templates/
 │       │   └── index.html        # Pagina principale
-│       ├── static/
-│       │   ├── css/style.css     # Tema dark con glassmorphism
-│       │   └── js/app.js         # Logica frontend
-│       ├── uploads/              # Video caricati (temporanei)
-│       └── outputs/              # Risultati per job
-├── doc-progetto/
-│   └── specifiche_tecniche_person_anonymizer_v6.md
+│       └── static/
+│           ├── css/style.css     # Tema dark
+│           └── js/
+│               ├── app.js        # Logica frontend
+│               └── review-editor.js  # Editor revisione canvas
+├── tests/                        # Test suite
+│   ├── test_config.py
+│   ├── test_detection.py
+│   ├── test_anonymization.py
+│   └── test_postprocessing.py
 ├── docs/
 │   └── REPORT_ATTIVITA.md
-├── input/                        # Video di input (non versionato)
 └── README.md
 ```
 

@@ -1,9 +1,8 @@
 """
 Thread wrapper per eseguire person_anonymizer.run_pipeline() dal web.
-Patcha i globals del modulo, cattura stdout/tqdm, invia eventi SSE.
+Crea PipelineConfig dai parametri web, cattura stdout/tqdm, invia eventi SSE.
 """
 
-import os
 import re
 import sys
 import threading
@@ -13,50 +12,73 @@ from types import SimpleNamespace
 
 from web.sse_manager import SSEManager
 from web.review_state import ReviewState
+from config import PipelineConfig
 
-# Mappa config web -> variabile globale del modulo
-GLOBALS_MAP = {
-    "operation_mode": "OPERATION_MODE",
-    "anonymization_method": "ANONYMIZATION_METHOD",
-    "anonymization_intensity": "ANONYMIZATION_INTENSITY",
-    "person_padding": "PERSON_PADDING",
-    "edge_padding_multiplier": "EDGE_PADDING_MULTIPLIER",
-    "edge_threshold": "EDGE_THRESHOLD",
-    "detection_confidence": "DETECTION_CONFIDENCE",
-    "nms_iou_internal": "NMS_IOU_INTERNAL",
-    "nms_iou_threshold": "NMS_IOU_THRESHOLD",
-    "yolo_model": "YOLO_MODEL",
-    "enable_fisheye_correction": "ENABLE_FISHEYE_CORRECTION",
-    "enable_motion_detection": "ENABLE_MOTION_DETECTION",
-    "motion_threshold": "MOTION_THRESHOLD",
-    "motion_min_area": "MOTION_MIN_AREA",
-    "motion_padding": "MOTION_PADDING",
-    "enable_sliding_window": "ENABLE_SLIDING_WINDOW",
-    "sliding_window_grid": "SLIDING_WINDOW_GRID",
-    "sliding_window_overlap": "SLIDING_WINDOW_OVERLAP",
-    "inference_scales": "INFERENCE_SCALES",
-    "tta_augmentations": "TTA_AUGMENTATIONS",
-    "quality_clahe_clip": "QUALITY_CLAHE_CLIP",
-    "quality_clahe_grid": "QUALITY_CLAHE_GRID",
-    "quality_darkness_threshold": "QUALITY_DARKNESS_THRESHOLD",
-    "enable_tracking": "ENABLE_TRACKING",
-    "track_max_age": "TRACK_MAX_AGE",
-    "track_match_thresh": "TRACK_MATCH_THRESH",
-    "enable_temporal_smoothing": "ENABLE_TEMPORAL_SMOOTHING",
-    "smoothing_alpha": "SMOOTHING_ALPHA",
-    "ghost_frames": "GHOST_FRAMES",
-    "ghost_expansion": "GHOST_EXPANSION",
-    "enable_adaptive_intensity": "ENABLE_ADAPTIVE_INTENSITY",
-    "adaptive_reference_height": "ADAPTIVE_REFERENCE_HEIGHT",
-    "enable_subframe_interpolation": "ENABLE_SUBFRAME_INTERPOLATION",
-    "interpolation_fps_threshold": "INTERPOLATION_FPS_THRESHOLD",
-    "enable_post_render_check": "ENABLE_POST_RENDER_CHECK",
-    "post_render_check_confidence": "POST_RENDER_CHECK_CONFIDENCE",
-    "max_refinement_passes": "MAX_REFINEMENT_PASSES",
-    "refinement_overlap_threshold": "REFINEMENT_OVERLAP_THRESHOLD",
-    "enable_debug_video": "ENABLE_DEBUG_VIDEO",
-    "enable_confidence_report": "ENABLE_CONFIDENCE_REPORT",
-}
+
+def _build_config(web_config: dict) -> PipelineConfig:
+    """Crea PipelineConfig dai parametri dell'interfaccia web.
+
+    Parameters
+    ----------
+    web_config : dict
+        Dizionario di parametri provenienti dalla form web.
+
+    Returns
+    -------
+    PipelineConfig
+        Istanza configurata con i valori ricevuti; i campi non presenti
+        in web_config mantengono il valore di default di PipelineConfig.
+    """
+    field_map = {
+        "operation_mode": "operation_mode",
+        "anonymization_method": "anonymization_method",
+        "anonymization_intensity": "anonymization_intensity",
+        "person_padding": "person_padding",
+        "detection_confidence": "detection_confidence",
+        "nms_iou_threshold": "nms_iou_threshold",
+        "yolo_model": "yolo_model",
+        "enable_fisheye_correction": "enable_fisheye_correction",
+        "enable_motion_detection": "enable_motion_detection",
+        "motion_threshold": "motion_threshold",
+        "motion_min_area": "motion_min_area",
+        "motion_padding": "motion_padding",
+        "enable_sliding_window": "enable_sliding_window",
+        "sliding_window_grid": "sliding_window_grid",
+        "sliding_window_overlap": "sliding_window_overlap",
+        "inference_scales": "inference_scales",
+        "tta_augmentations": "tta_augmentations",
+        "quality_clahe_clip": "quality_clahe_clip",
+        "quality_clahe_grid": "quality_clahe_grid",
+        "quality_darkness_threshold": "quality_darkness_threshold",
+        "enable_tracking": "enable_tracking",
+        "track_max_age": "track_max_age",
+        "track_match_thresh": "track_match_thresh",
+        "enable_temporal_smoothing": "enable_temporal_smoothing",
+        "smoothing_alpha": "smoothing_alpha",
+        "ghost_frames": "ghost_frames",
+        "ghost_expansion": "ghost_expansion",
+        "enable_adaptive_intensity": "enable_adaptive_intensity",
+        "adaptive_reference_height": "adaptive_reference_height",
+        "enable_subframe_interpolation": "enable_subframe_interpolation",
+        "interpolation_fps_threshold": "interpolation_fps_threshold",
+        "enable_post_render_check": "enable_post_render_check",
+        "post_render_check_confidence": "post_render_check_confidence",
+        "max_refinement_passes": "max_refinement_passes",
+        "refinement_overlap_threshold": "refinement_overlap_threshold",
+        "enable_debug_video": "enable_debug_video",
+        "enable_confidence_report": "enable_confidence_report",
+        "edge_padding_multiplier": "edge_padding_multiplier",
+        "edge_threshold": "edge_threshold",
+        "nms_iou_internal": "nms_iou_internal",
+    }
+    kwargs = {}
+    for web_key, config_key in field_map.items():
+        if web_key in web_config:
+            val = web_config[web_key]
+            if config_key == "quality_clahe_grid" and isinstance(val, list):
+                val = tuple(val)
+            kwargs[config_key] = val
+    return PipelineConfig(**kwargs)
 
 
 class TqdmCapture:
@@ -199,7 +221,7 @@ class PipelineRunner:
         self.review_state = ReviewState()
 
     def start(
-        self, job_id: str, video_path: str, config: dict, review_json: str | None = None
+        self, job_id: str, video_path: str, config_dict: dict, review_json: str | None = None
     ) -> tuple[bool, str]:
         """Avvia la pipeline. Restituisce (success, message)."""
         with self._lock:
@@ -210,7 +232,7 @@ class PipelineRunner:
 
         self._thread = threading.Thread(
             target=self._run,
-            args=(job_id, video_path, config, review_json),
+            args=(job_id, video_path, config_dict, review_json),
             daemon=True,
         )
         self._thread.start()
@@ -235,29 +257,19 @@ class PipelineRunner:
                 "job_id": self._current_job_id if running else None,
             }
 
-    def _run(self, job_id: str, video_path: str, config: dict, review_json: str | None):
-        """Esegue la pipeline nel thread. Patcha globals, cattura output."""
+    def _run(self, job_id: str, video_path: str, config_dict: dict, review_json: str | None):
+        """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
 
         import person_anonymizer as pa
 
-        # --- Assicura che il cwd sia la dir di person_anonymizer (per modelli YOLO) ---
-        original_cwd = os.getcwd()
-        pa_dir = str(Path(pa.__file__).resolve().parent)
-        os.chdir(pa_dir)
+        # --- Crea config dalla web form ---
+        config = _build_config(config_dict)
 
-        # --- Salva globals originali ---
-        saved_globals = {}
-        for web_key, mod_key in GLOBALS_MAP.items():
-            saved_globals[mod_key] = getattr(pa, mod_key)
-
-        # --- Applica config dal web ---
-        for web_key, mod_key in GLOBALS_MAP.items():
-            if web_key in config:
-                val = config[web_key]
-                # Conversione tipi speciali
-                if mod_key == "QUALITY_CLAHE_GRID" and isinstance(val, list):
-                    val = tuple(val)
-                setattr(pa, mod_key, val)
+        # --- Assicura path assoluto per il modello YOLO ---
+        pa_dir = Path(pa.__file__).resolve().parent
+        yolo_path = pa_dir / config.yolo_model
+        if yolo_path.exists():
+            config.yolo_model = str(yolo_path)
 
         # --- Prepara output dir per questo job ---
         job_output = self._output_dir / job_id
@@ -267,17 +279,17 @@ class PipelineRunner:
         output_path = str(job_output / f"{input_stem}_anonymized.mp4")
 
         # --- Costruisci args namespace ---
-        mode = config.get("operation_mode") or pa.OPERATION_MODE
+        mode = config.operation_mode
 
         args = SimpleNamespace(
             input=video_path,
             mode=mode,
-            method=config.get("anonymization_method"),
-            no_debug=not config.get("enable_debug_video", True),
-            no_report=not config.get("enable_confidence_report", True),
+            method=config_dict.get("anonymization_method"),
+            no_debug=not config_dict.get("enable_debug_video", True),
+            no_report=not config_dict.get("enable_confidence_report", True),
             review=review_json,
             output=output_path,
-            normalize=config.get("normalize", False),
+            normalize=config_dict.get("normalize", False),
         )
 
         # In modalità manual da web, passa lo stato review e il manager SSE
@@ -296,7 +308,7 @@ class PipelineRunner:
         self._sse.emit(job_id, "started", {"job_id": job_id})
 
         try:
-            pa.run_pipeline(args)
+            pa.run_pipeline(args, config=config)
 
             # Successo: elenca file di output
             outputs = []
@@ -330,24 +342,22 @@ class PipelineRunner:
             )
 
         except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).exception("Pipeline error for job %s", job_id)
             self._sse.emit(
                 job_id,
                 "error",
                 {
                     "job_id": job_id,
-                    "message": str(e),
+                    "message": "Errore durante l'elaborazione della pipeline",
                 },
             )
 
         finally:
-            # --- Ripristina tutto ---
+            # --- Ripristina cattura output ---
             stdout_capture.uninstall()
             tqdm_capture.uninstall()
-
-            for mod_key, original_val in saved_globals.items():
-                setattr(pa, mod_key, original_val)
-
-            os.chdir(original_cwd)
 
             self._sse.close(job_id)
 
