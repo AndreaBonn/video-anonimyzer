@@ -318,7 +318,7 @@ class PipelineRunner:
         self._lock = threading.Lock()
         self._current_job_id: str | None = None
         self._thread: threading.Thread | None = None
-        self._stop_requested = False
+        self._stop_event = threading.Event()
         self.review_state = ReviewState()
 
     def start(
@@ -329,7 +329,7 @@ class PipelineRunner:
             if self._thread and self._thread.is_alive():
                 return False, "Una pipeline è già in esecuzione"
             self._current_job_id = job_id
-            self._stop_requested = False
+            self._stop_event.clear()
 
         self._thread = threading.Thread(
             target=self._run,
@@ -346,7 +346,7 @@ class PipelineRunner:
                 return False
             if job_id and job_id != self._current_job_id:
                 return False
-            self._stop_requested = True
+            self._stop_event.set()
         return True
 
     def get_status(self) -> dict:
@@ -409,6 +409,7 @@ class PipelineRunner:
             output=output_path,
             normalize=config_dict.get("normalize", False),
         )
+        args._stop_event = self._stop_event
 
         # In modalità manual da web, passa lo stato review e il manager SSE
         if mode == "manual":
@@ -473,6 +474,13 @@ class PipelineRunner:
             # --- Ripristina cattura output ---
             stdout_capture.uninstall()
             tqdm_capture.uninstall()
+
+            if self._stop_event.is_set():
+                self._sse.emit(
+                    job_id,
+                    "stopped",
+                    {"job_id": job_id, "message": "Pipeline interrotta dall'utente"},
+                )
 
             self._sse.close(job_id)
 

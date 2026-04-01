@@ -293,7 +293,7 @@ def _process_single_frame(frame, model, config, frame_w, frame_h, proc, prev_int
 
 
 def _run_detection_loop(
-    cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2
+    cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2, stop_event=None
 ):
     """Loop di detection frame-per-frame. Restituisce (annotations, report_data, stats)."""
     frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -311,6 +311,10 @@ def _run_detection_loop(
     frame_idx = 0
 
     while True:
+        if stop_event is not None and stop_event.is_set():
+            print("\n  Pipeline interrotta dall'utente.")
+            break
+
         ret, frame = cap.read()
         if not ret:
             if frame_idx < total_frames - 1:
@@ -393,6 +397,7 @@ def _run_refinement_loop(
     undist_map2,
     report_data,
     temp_video_path,
+    stop_event=None,
 ):
     """Loop di auto-refinement. Restituisce (annotations, actual_passes, annotations_added)."""
     if not config.enable_post_render_check:
@@ -401,6 +406,10 @@ def _run_refinement_loop(
 
     actual_passes, annotations_added = 0, 0
     for pass_num in range(1, config.max_refinement_passes + 1):
+        if stop_event is not None and stop_event.is_set():
+            print("\n  Pipeline interrotta dall'utente.")
+            break
+
         actual_passes = pass_num
         pass_label = f"pass {pass_num}/{config.max_refinement_passes}"
 
@@ -419,6 +428,7 @@ def _run_refinement_loop(
             config,
             debug_path=None,
             desc=f"Rendering ({pass_label})",
+            stop_event=stop_event,
         )
 
         print(f"\n  Verifica post-rendering ({pass_label})...")
@@ -674,6 +684,7 @@ def run_pipeline(args, config=None):
     enable_debug = not args.no_debug
     enable_report = not args.no_report
     review_json = args.review
+    stop_event = getattr(args, "_stop_event", None)
 
     if args.normalize and not review_json:
         raise PipelineInputError("--normalize richiede --review <json>")
@@ -813,7 +824,7 @@ def run_pipeline(args, config=None):
         cap.release()
     else:
         annotations, report_data, _ = _run_detection_loop(
-            cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2
+            cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2, stop_event
         )
 
     # ============================================
@@ -834,6 +845,7 @@ def run_pipeline(args, config=None):
             undist_map2,
             report_data,
             temp_video_path,
+            stop_event,
         )
     else:
         actual_refinement_passes, refinement_annotations_added = 0, 0
@@ -876,6 +888,7 @@ def run_pipeline(args, config=None):
         config,
         debug_path=temp_debug_path if enable_debug else None,
         desc="Rendering finale",
+        stop_event=stop_event,
     )
 
     # ============================================

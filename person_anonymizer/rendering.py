@@ -28,6 +28,7 @@ def render_video(
     config: PipelineConfig,
     debug_path=None,
     desc="Rendering",
+    stop_event=None,
 ):
     """
     Renderizza il video anonimizzato dal video originale.
@@ -82,6 +83,9 @@ def render_video(
     frame_idx = 0
 
     while True:
+        if stop_event is not None and stop_event.is_set():
+            break
+
         ret, frame = cap.read()
         if not ret:
             if frame_idx < total_frames - 1:
