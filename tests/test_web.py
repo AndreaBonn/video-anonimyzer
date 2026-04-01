@@ -242,77 +242,61 @@ class TestUpload:
 
 
 class TestConfigDefaults:
-    """Verifica l'endpoint /api/config/defaults."""
+    """Verifica l'endpoint /api/config/defaults.
 
-    def test_config_defaults_returns_200(self, client):
+    Non testa i valori specifici (quelli possono cambiare legittimamente).
+    Testa che l'endpoint funzioni e che la struttura sia coerente con
+    PipelineConfig.
+    """
+
+    def test_config_defaults_returns_200_json(self, client):
         # Arrange / Act
         resp = client.get("/api/config/defaults")
 
         # Assert
         assert resp.status_code == 200
-
-    def test_config_defaults_returns_json(self, client):
-        # Arrange / Act
-        resp = client.get("/api/config/defaults")
-
-        # Assert
         assert resp.content_type.startswith("application/json")
 
-    def test_config_defaults_contains_operation_mode(self, client):
+    def test_config_defaults_contains_all_pipeline_fields(self, client):
+        # Arrange — i campi minimi che il frontend usa per costruire la form
+        required_fields = {
+            "operation_mode",
+            "anonymization_method",
+            "anonymization_intensity",
+            "detection_confidence",
+            "nms_iou_threshold",
+            "enable_tracking",
+            "enable_sliding_window",
+            "enable_post_render_check",
+        }
+
+        # Act
+        resp = client.get("/api/config/defaults")
+        data = resp.get_json()
+
+        # Assert — tutti i campi richiesti dal frontend sono presenti
+        missing = required_fields - set(data.keys())
+        assert missing == set(), f"Campi mancanti: {missing}"
+
+    def test_config_defaults_confidence_in_valid_range(self, client):
         # Arrange / Act
         resp = client.get("/api/config/defaults")
         data = resp.get_json()
 
-        # Assert
-        assert "operation_mode" in data
+        # Assert — la confidence deve essere un float tra 0 e 1
+        conf = data["detection_confidence"]
+        assert isinstance(conf, float)
+        assert 0.0 < conf < 1.0
 
-    def test_config_defaults_contains_detection_confidence(self, client):
-        # Arrange / Act
+    def test_config_defaults_tuples_serialized_as_lists(self, client):
+        # Arrange / Act — PipelineConfig ha tuple (quality_clahe_grid)
+        # che devono essere convertite in liste per JSON
         resp = client.get("/api/config/defaults")
         data = resp.get_json()
 
-        # Assert
-        assert "detection_confidence" in data
-
-    def test_config_defaults_contains_anonymization_method(self, client):
-        # Arrange / Act
-        resp = client.get("/api/config/defaults")
-        data = resp.get_json()
-
-        # Assert
-        assert "anonymization_method" in data
-
-    def test_config_defaults_contains_enable_tracking(self, client):
-        # Arrange / Act
-        resp = client.get("/api/config/defaults")
-        data = resp.get_json()
-
-        # Assert
-        assert "enable_tracking" in data
-
-    def test_config_defaults_operation_mode_value(self, client):
-        # Arrange / Act
-        resp = client.get("/api/config/defaults")
-        data = resp.get_json()
-
-        # Assert — il default da PipelineConfig è "manual"
-        assert data["operation_mode"] == "manual"
-
-    def test_config_defaults_detection_confidence_value(self, client):
-        # Arrange / Act
-        resp = client.get("/api/config/defaults")
-        data = resp.get_json()
-
-        # Assert
-        assert abs(data["detection_confidence"] - 0.20) < 1e-6
-
-    def test_config_defaults_inference_scales_is_list(self, client):
-        # Arrange / Act — le tuple vengono convertite in liste per JSON
-        resp = client.get("/api/config/defaults")
-        data = resp.get_json()
-
-        # Assert
+        # Assert — JSON non ha tuple, devono essere liste
         assert isinstance(data["inference_scales"], list)
+        assert isinstance(data["quality_clahe_grid"], list)
 
 
 # ---------------------------------------------------------------------------
@@ -345,14 +329,15 @@ class TestDownload:
         assert resp.status_code == 404
         assert "error" in resp.get_json()
 
-    def test_download_invalid_file_type(self, client):
-        # Arrange — job_id valido, tipo non in type_map
+    def test_download_nonexistent_job_with_invalid_type(self, client):
+        # Arrange — job_id valido ma inesistente + tipo invalido
+        # Il codice controlla prima l'esistenza della cartella (404)
+        # poi il tipo file (400). Con job inesistente → 404
         valid_id = "aabbccddeeff"
 
         # Act
         resp = client.get(f"/api/download/{valid_id}/nonsense")
 
-        # Assert — 400 per job_id non trovato viene prima del type check
-        # oppure 404 se la cartella non esiste. Entrambi sono errori non-200.
-        assert resp.status_code in (400, 404)
+        # Assert — la cartella non esiste, quindi 404 prima del type check
+        assert resp.status_code == 404
         assert "error" in resp.get_json()

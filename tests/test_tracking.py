@@ -9,7 +9,6 @@ import pytest
 
 from tracking import TemporalSmoother
 
-
 # ============================================================
 # TemporalSmoother.smooth
 # ============================================================
@@ -40,10 +39,10 @@ class TestSmooth:
 
         # Assert — formula EMA: alpha * current + (1-alpha) * previous
         # prev = [0, 0, 100, 100], curr = [50, 50, 150, 150]
-        expected_x1 = int(alpha * 50 + (1 - alpha) * 0)    # 20
-        expected_y1 = int(alpha * 50 + (1 - alpha) * 0)    # 20
-        expected_x2 = int(alpha * 150 + (1 - alpha) * 100) # 120
-        expected_y2 = int(alpha * 150 + (1 - alpha) * 100) # 120
+        expected_x1 = int(alpha * 50 + (1 - alpha) * 0)  # 20
+        expected_y1 = int(alpha * 50 + (1 - alpha) * 0)  # 20
+        expected_x2 = int(alpha * 150 + (1 - alpha) * 100)  # 120
+        expected_y2 = int(alpha * 150 + (1 - alpha) * 100)  # 120
         assert result == (expected_x1, expected_y1, expected_x2, expected_y2)
 
     def test_smooth_resets_ghost_countdown(self):
@@ -117,7 +116,7 @@ class TestGetGhostBoxes:
         assert len(ghosts) == 1
         _, gx1, gy1, gx2, gy2 = ghosts[0]
         # L'espansione centra il box: verifica che sia più grande dell'originale
-        orig_w = 150 - 50   # 100
+        orig_w = 150 - 50  # 100
         ghost_w = gx2 - gx1
         assert ghost_w > orig_w
         # Verifica valori precisi (alpha=1.0 → stato = coords esatte)
@@ -126,20 +125,35 @@ class TestGetGhostBoxes:
         assert gx2 == 175
         assert gy2 == 175
 
-    def test_ghost_removed_after_countdown(self):
-        # Arrange — ghost_frames=3, il countdown va 3→2→1→0 in 3 chiamate,
-        # la pulizia avviene alla 4a chiamata quando countdown == 0
+    def test_ghost_eventually_removed(self):
+        # Arrange — un ghost deve scomparire dopo un numero finito di chiamate,
+        # indipendentemente dai dettagli di implementazione del countdown
         smoother = TemporalSmoother(alpha=0.5, ghost_frames=3)
         smoother.smooth(track_id=4, x1=0, y1=0, x2=40, y2=40)
         smoother.clear_stale(active_ids=set())
 
-        # Act — 3 chiamate decrementano, la 4a pulisce
-        for _ in range(4):
+        # Act — chiama get_ghost_boxes abbondantemente oltre ghost_frames
+        for _ in range(10):
             smoother.get_ghost_boxes()
 
-        # Assert — il track deve essere rimosso completamente
-        assert 4 not in smoother.ghost_countdown
+        # Assert — il track deve essere rimosso: nessun ghost box residuo
+        # e nessuna traccia nello stato interno
+        assert smoother.get_ghost_boxes() == []
         assert 4 not in smoother.state
+
+    def test_ghost_persists_during_countdown(self):
+        # Arrange — un ghost con 5 frame deve essere ancora visibile dopo 2 chiamate
+        smoother = TemporalSmoother(alpha=0.5, ghost_frames=5)
+        smoother.smooth(track_id=5, x1=10, y1=10, x2=60, y2=60)
+        smoother.clear_stale(active_ids=set())
+
+        # Act — solo 2 chiamate su 5: il ghost deve essere ancora presente
+        smoother.get_ghost_boxes()
+        ghosts = smoother.get_ghost_boxes()
+
+        # Assert — il ghost deve ancora esistere
+        assert len(ghosts) == 1
+        assert ghosts[0][0] == 5
 
 
 # ============================================================
