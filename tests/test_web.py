@@ -426,3 +426,199 @@ class TestUploadSecurity:
             body = resp.get_json()
             assert "path" not in body
             assert "filename" in body
+
+
+# ---------------------------------------------------------------------------
+# TestAnnotationValidation
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotationValidation:
+    """Verifica la validazione strutturale delle annotazioni (P1-01).
+
+    Testa _validate_annotation_frame direttamente perché l'endpoint
+    controlla is_active prima della validazione.
+    """
+
+    def test_valid_annotation_payload(self):
+        # Arrange
+        from web.app import _validate_annotation_frame
+
+        payload = {"auto": [[[0, 0], [10, 0], [10, 10]]], "manual": []}
+
+        # Act
+        valid, msg = _validate_annotation_frame(payload)
+
+        # Assert
+        assert valid is True
+        assert msg == ""
+
+    def test_invalid_annotation_not_dict(self):
+        # Arrange
+        from web.app import _validate_annotation_frame
+
+        # Act
+        valid, msg = _validate_annotation_frame([1, 2, 3])
+
+        # Assert
+        assert valid is False
+        assert "dizionario" in msg
+
+    def test_invalid_annotation_auto_not_list(self):
+        # Arrange
+        from web.app import _validate_annotation_frame
+
+        # Act
+        valid, msg = _validate_annotation_frame({"auto": "not_a_list", "manual": []})
+
+        # Assert
+        assert valid is False
+        assert "lista" in msg
+
+    def test_invalid_annotation_polygon_too_few_points(self):
+        # Arrange — poligono con solo 2 punti (minimo 3)
+        from web.app import _validate_annotation_frame
+
+        # Act
+        valid, msg = _validate_annotation_frame({"auto": [[[0, 0], [10, 10]]], "manual": []})
+
+        # Assert
+        assert valid is False
+        assert "almeno 3" in msg
+
+    def test_invalid_annotation_point_not_pair(self):
+        # Arrange — punto con 3 coordinate invece di 2
+        from web.app import _validate_annotation_frame
+
+        # Act
+        valid, msg = _validate_annotation_frame(
+            {"auto": [[[0, 0, 0], [10, 10, 0], [5, 5, 0]]], "manual": []}
+        )
+
+        # Assert
+        assert valid is False
+        assert "[x, y]" in msg
+
+    def test_invalid_annotation_non_numeric_coordinates(self):
+        # Arrange — coordinate stringa
+        from web.app import _validate_annotation_frame
+
+        # Act
+        valid, msg = _validate_annotation_frame(
+            {"auto": [[["a", "b"], [10, 10], [5, 5]]], "manual": []}
+        )
+
+        # Assert
+        assert valid is False
+        assert "numeriche" in msg
+
+    def test_valid_annotation_with_float_coordinates(self):
+        # Arrange — coordinate float sono valide
+        from web.app import _validate_annotation_frame
+
+        payload = {"auto": [[[0.5, 1.5], [10.1, 0.2], [10.3, 10.4]]], "manual": []}
+
+        # Act
+        valid, msg = _validate_annotation_frame(payload)
+
+        # Assert
+        assert valid is True
+
+    def test_endpoint_returns_404_when_review_not_active(self, client):
+        # Arrange — payload valido ma review non attiva
+        payload = {"auto": [[[0, 0], [10, 0], [10, 10]]], "manual": []}
+
+        # Act
+        resp = client.put("/api/review/annotations/0", json=payload)
+
+        # Assert — 404 perché la review non è attiva (validazione passata)
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestSSESubscriberCap
+# ---------------------------------------------------------------------------
+
+
+class TestSSESubscriberCap:
+    """Verifica il cap sui subscriber SSE per job (P1-02)."""
+
+    def test_subscriber_cap_raises_after_limit(self):
+        # Arrange
+        from web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+
+        mgr = SSEManager()
+        job_id = "test_job_cap"
+
+        # Act — sottoscrivi fino al limite
+        queues = []
+        for _ in range(_MAX_SUBSCRIBERS_PER_JOB):
+            queues.append(mgr.subscribe(job_id))
+
+        # Assert — il prossimo subscribe deve lanciare RuntimeError
+        with pytest.raises(RuntimeError):
+            mgr.subscribe(job_id)
+
+    def test_subscriber_cap_freed_after_unsubscribe(self):
+        # Arrange
+        from web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+
+        mgr = SSEManager()
+        job_id = "test_job_free"
+
+        queues = []
+        for _ in range(_MAX_SUBSCRIBERS_PER_JOB):
+            queues.append(mgr.subscribe(job_id))
+
+        # Act — libera uno slot
+        mgr.unsubscribe(job_id, queues[0])
+
+        # Assert — ora possiamo sottoscrivere di nuovo
+        q = mgr.subscribe(job_id)
+        assert q is not None
+
+
+# ---------------------------------------------------------------------------
+# TestSecurityHeadersNew
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityHeadersNew:
+    """Verifica i nuovi header di sicurezza COOP/CORP (P2-04)."""
+
+    def test_coop_header_present(self, client):
+        resp = client.get("/")
+        assert resp.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
+
+    def test_corp_header_present(self, client):
+        resp = client.get("/")
+        assert resp.headers.get("Cross-Origin-Resource-Policy") == "same-origin"
+
+
+# ---------------------------------------------------------------------------
+# TestConfigDefaultsFiltered
+# ---------------------------------------------------------------------------
+
+
+class TestConfigDefaultsFiltered:
+    """Verifica che config defaults esponga solo campi in _ALLOWED_FIELDS."""
+
+    def test_config_defaults_excludes_internal_fields(self, client):
+        # Arrange — campi che NON devono apparire
+        internal_fields = {
+            "review_auto_color",
+            "review_manual_color",
+            "review_drawing_color",
+            "review_fill_alpha",
+            "review_window_max_width",
+            "camera_matrix",
+            "dist_coefficients",
+        }
+
+        # Act
+        resp = client.get("/api/config/defaults")
+        data = resp.get_json()
+
+        # Assert — nessun campo interno presente
+        leaked = internal_fields & set(data.keys())
+        assert leaked == set(), f"Campi interni esposti: {leaked}"

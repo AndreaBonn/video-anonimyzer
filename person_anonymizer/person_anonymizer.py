@@ -46,7 +46,7 @@ from anonymization import (
     box_to_polygon,
     polygon_to_bbox,
 )
-from rendering import render_video, _compute_review_stats
+from rendering import render_video, compute_review_stats
 from postprocessing import (
     encode_with_audio,
     encode_without_audio,
@@ -84,6 +84,34 @@ class VideoMeta:
     frame_w: int
     frame_h: int
     total_frames: int
+
+
+@dataclass
+class PipelineResult:
+    """Risultati della pipeline da salvare."""
+
+    annotations: dict
+    report_data: dict
+    review_stats: dict
+    method: str
+    mode: str
+    enable_debug: bool
+    enable_report: bool
+    ffmpeg_available: bool
+    actual_refinement_passes: int
+    refinement_annotations_added: int
+
+
+@dataclass
+class FrameProcessors:
+    """Processori inizializzati per il loop di detection."""
+
+    clahe_obj: object
+    motion_detector: object  # MotionDetector | None
+    patches: list
+    tracker: object  # BYTETracker | None
+    smoother: object  # TemporalSmoother | None
+    do_interpolation: bool
 
 
 # ============================================================
@@ -126,14 +154,8 @@ def _load_annotations_from_json(review_json, config):
     return annotations, "manual"
 
 
-def _run_detection_loop(
-    cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2
-):
-    """Loop di detection frame-per-frame. Restituisce (annotations, report_data, stats)."""
-    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-
+def _init_frame_processors(fps, frame_w, frame_h, config):
+    """Inizializza i processori per il loop di detection."""
     do_interpolation = config.enable_subframe_interpolation and should_interpolate(
         fps, config.interpolation_fps_threshold
     )
@@ -158,6 +180,127 @@ def _run_detection_loop(
         if config.enable_temporal_smoothing
         else None
     )
+    return FrameProcessors(
+        clahe_obj=clahe_obj,
+        motion_detector=motion_detector,
+        patches=patches,
+        tracker=tracker,
+        smoother=smoother,
+        do_interpolation=do_interpolation,
+    )
+
+
+def _process_single_frame(frame, model, config, frame_w, frame_h, proc, prev_interp, fps):
+    """Processa un singolo frame: detection, tracking, smoothing, ghost boxes.
+
+    Returns
+    -------
+    tuple
+        (frame_polygons, frame_intensities, tracked, sw_hits, ms_hits, active_ids, new_prev_interp, motion_count)
+    """
+    enhanced = enhance_frame(frame, proc.clahe_obj, config.quality_darkness_threshold)
+    motion_regions = (
+        proc.motion_detector.get_motion_regions(enhanced) if proc.motion_detector else None
+    )
+    motion_count = len(motion_regions) if motion_regions else 0
+
+    all_boxes = []
+    if proc.do_interpolation and prev_interp is not None:
+        n_interp = max(1, int(config.interpolation_fps_threshold / fps) - 1)
+        for vf in interpolate_frames(prev_interp, enhanced, n_interp):
+            vf_boxes, _, _ = run_full_detection(
+                model,
+                vf,
+                config.detection_confidence,
+                frame_w,
+                frame_h,
+                motion_regions,
+                proc.patches,
+                config,
+            )
+            all_boxes.extend(vf_boxes)
+    new_prev_interp = enhanced.copy()
+
+    real_boxes, sw_hits, ms_hits = run_full_detection(
+        model,
+        enhanced,
+        config.detection_confidence,
+        frame_w,
+        frame_h,
+        motion_regions,
+        proc.patches,
+        config,
+    )
+    all_boxes.extend(real_boxes)
+    nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
+
+    tracked = (
+        update_tracker(proc.tracker, nms_boxes, (frame_h, frame_w, 3))
+        if (config.enable_tracking and proc.tracker)
+        else [(i, b[0], b[1], b[2], b[3], b[4]) for i, b in enumerate(nms_boxes)]
+    )
+
+    frame_polygons, frame_intensities, active_ids = [], [], set()
+    for tid, x1, y1, x2, y2, conf in tracked:
+        active_ids.add(tid)
+        if config.enable_temporal_smoothing and proc.smoother:
+            x1, y1, x2, y2 = proc.smoother.smooth(tid, x1, y1, x2, y2)
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(frame_w, x2), min(frame_h, y2)
+        box_h = y2 - y1
+        intensity = (
+            compute_adaptive_intensity(
+                box_h, config.anonymization_intensity, config.adaptive_reference_height
+            )
+            if config.enable_adaptive_intensity
+            else config.anonymization_intensity
+        )
+        frame_polygons.append(
+            box_to_polygon(x1, y1, x2, y2, config.person_padding, frame_w, frame_h, config=config)
+        )
+        frame_intensities.append(intensity)
+
+    if proc.smoother:
+        proc.smoother.clear_stale(active_ids)
+        for gtid, gx1, gy1, gx2, gy2 in proc.smoother.get_ghost_boxes():
+            gx1, gy1, gx2, gy2 = max(0, gx1), max(0, gy1), min(frame_w, gx2), min(frame_h, gy2)
+            ghost_h = gy2 - gy1
+            if ghost_h <= 0:
+                continue
+            g_int = (
+                compute_adaptive_intensity(
+                    ghost_h, config.anonymization_intensity, config.adaptive_reference_height
+                )
+                if config.enable_adaptive_intensity
+                else config.anonymization_intensity
+            )
+            frame_polygons.append(
+                box_to_polygon(
+                    gx1, gy1, gx2, gy2, config.person_padding, frame_w, frame_h, config=config
+                )
+            )
+            frame_intensities.append(g_int)
+
+    return (
+        frame_polygons,
+        frame_intensities,
+        tracked,
+        sw_hits,
+        ms_hits,
+        active_ids,
+        new_prev_interp,
+        motion_count,
+    )
+
+
+def _run_detection_loop(
+    cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2
+):
+    """Loop di detection frame-per-frame. Restituisce (annotations, report_data, stats)."""
+    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+
+    proc = _init_frame_processors(fps, frame_w, frame_h, config)
 
     annotations, report_data = {}, {}
     unique_ids, total_instances, frames_zero_det, all_confs, corrupted = set(), 0, 0, [], []
@@ -179,88 +322,22 @@ def _run_detection_loop(
 
         if fisheye_enabled:
             frame = undistort_frame(frame, undist_map1, undist_map2)
-        enhanced = enhance_frame(frame, clahe_obj, config.quality_darkness_threshold)
-        motion_regions = motion_detector.get_motion_regions(enhanced) if motion_detector else None
 
-        all_boxes = []
-        if do_interpolation and prev_interp is not None:
-            n_interp = max(1, int(config.interpolation_fps_threshold / fps) - 1)
-            for vf in interpolate_frames(prev_interp, enhanced, n_interp):
-                vf_boxes, _, _ = run_full_detection(
-                    model,
-                    vf,
-                    config.detection_confidence,
-                    frame_w,
-                    frame_h,
-                    motion_regions,
-                    patches,
-                    config,
-                )
-                all_boxes.extend(vf_boxes)
-        prev_interp = enhanced.copy()
+        (
+            frame_polygons,
+            frame_intensities,
+            tracked,
+            sw_hits,
+            ms_hits,
+            active_ids,
+            prev_interp,
+            motion_count,
+        ) = _process_single_frame(frame, model, config, frame_w, frame_h, proc, prev_interp, fps)
 
-        real_boxes, sw_hits, ms_hits = run_full_detection(
-            model,
-            enhanced,
-            config.detection_confidence,
-            frame_w,
-            frame_h,
-            motion_regions,
-            patches,
-            config,
-        )
-        all_boxes.extend(real_boxes)
-        nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
-
-        tracked = (
-            update_tracker(tracker, nms_boxes, (frame_h, frame_w, 3))
-            if (config.enable_tracking and tracker)
-            else [(i, b[0], b[1], b[2], b[3], b[4]) for i, b in enumerate(nms_boxes)]
-        )
-
-        frame_polygons, frame_intensities, active_ids = [], [], set()
-        for tid, x1, y1, x2, y2, conf in tracked:
-            active_ids.add(tid)
+        for tid, *_ in tracked:
             unique_ids.add(tid)
-            if config.enable_temporal_smoothing and smoother:
-                x1, y1, x2, y2 = smoother.smooth(tid, x1, y1, x2, y2)
-            x1, y1, x2, y2 = max(0, x1), max(0, y1), min(frame_w, x2), min(frame_h, y2)
-            box_h = y2 - y1
-            intensity = (
-                compute_adaptive_intensity(
-                    box_h, config.anonymization_intensity, config.adaptive_reference_height
-                )
-                if config.enable_adaptive_intensity
-                else config.anonymization_intensity
-            )
-            frame_polygons.append(
-                box_to_polygon(
-                    x1, y1, x2, y2, config.person_padding, frame_w, frame_h, config=config
-                )
-            )
-            frame_intensities.append(intensity)
-            all_confs.append(conf)
-
-        if smoother:
-            smoother.clear_stale(active_ids)
-            for gtid, gx1, gy1, gx2, gy2 in smoother.get_ghost_boxes():
-                gx1, gy1, gx2, gy2 = max(0, gx1), max(0, gy1), min(frame_w, gx2), min(frame_h, gy2)
-                ghost_h = gy2 - gy1
-                if ghost_h <= 0:
-                    continue
-                g_int = (
-                    compute_adaptive_intensity(
-                        ghost_h, config.anonymization_intensity, config.adaptive_reference_height
-                    )
-                    if config.enable_adaptive_intensity
-                    else config.anonymization_intensity
-                )
-                frame_polygons.append(
-                    box_to_polygon(
-                        gx1, gy1, gx2, gy2, config.person_padding, frame_w, frame_h, config=config
-                    )
-                )
-                frame_intensities.append(g_int)
+        confs = [t[5] for t in tracked]
+        all_confs.extend(confs)
 
         annotations[frame_idx] = {
             "auto": frame_polygons,
@@ -271,14 +348,13 @@ def _run_detection_loop(
         total_instances += n_det
         if n_det == 0:
             frames_zero_det += 1
-        confs = [t[5] for t in tracked]
         report_data[frame_idx] = {
             "frame_number": frame_idx,
             "persons_detected": n_det,
             "avg_confidence": float(np.mean(confs)) if confs else 0.0,
             "min_confidence": float(min(confs)) if confs else 0.0,
             "max_confidence": float(max(confs)) if confs else 0.0,
-            "motion_zones": len(motion_regions) if motion_regions else 0,
+            "motion_zones": motion_count,
             "sliding_window_hits": sw_hits,
             "multiscale_hits": ms_hits,
             "post_check_alerts": 0,
@@ -453,7 +529,7 @@ def _run_manual_review(
             for fidx, d in annotations.items()
         }
         annotations = web_review_state.wait_for_completion()
-        review_stats = _compute_review_stats(original, annotations, total_frames)
+        review_stats = compute_review_stats(original, annotations, total_frames)
         print(f"\n  Revisione completata:")
         print(f"  Poligoni aggiunti:     {review_stats['added']}")
         print(f"  Poligoni rimossi:      {review_stats['removed']}")
@@ -490,33 +566,24 @@ def _run_manual_review(
 
 def _save_outputs(
     args,
-    annotations,
-    report_data,
-    review_stats,
+    result: PipelineResult,
     config,
-    method,
-    mode,
     input_path,
     paths: OutputPaths,
     meta: VideoMeta,
-    enable_debug,
-    enable_report,
-    ffmpeg_available,
-    actual_refinement_passes,
-    refinement_annotations_added,
 ):
     """Encoding H.264, salvataggio CSV/JSON, cleanup temp."""
     try:
-        if ffmpeg_available:
+        if result.ffmpeg_available:
             encode_with_audio(paths.temp_video, input_path, paths.output)
-            if enable_debug and os.path.exists(paths.temp_debug):
+            if result.enable_debug and os.path.exists(paths.temp_debug):
                 encode_without_audio(paths.temp_debug, paths.debug)
         else:
             shutil.copy(paths.temp_video, paths.output)
-            if enable_debug and os.path.exists(paths.temp_debug):
+            if result.enable_debug and os.path.exists(paths.temp_debug):
                 shutil.copy(paths.temp_debug, paths.debug)
 
-        if enable_report:
+        if result.enable_report:
             with open(paths.report, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
@@ -533,10 +600,10 @@ def _save_outputs(
                     ],
                 )
                 writer.writeheader()
-                for fidx in sorted(report_data.keys()):
-                    writer.writerow(report_data[fidx])
+                for fidx in sorted(result.report_data.keys()):
+                    writer.writerow(result.report_data[fidx])
 
-        if mode == "manual" or args.normalize:
+        if result.mode == "manual" or args.normalize:
             json_annotations = {
                 "schema_version": "2.0",
                 "tool_version": VERSION,
@@ -554,7 +621,7 @@ def _save_outputs(
                     "inference_scales": config.inference_scales,
                     "sliding_window_grid": config.sliding_window_grid,
                     "padding": config.person_padding,
-                    "anonymization_method": method,
+                    "anonymization_method": result.method,
                     "base_intensity": config.anonymization_intensity,
                     "adaptive_reference_height": config.adaptive_reference_height,
                     "smoothing_alpha": config.smoothing_alpha,
@@ -562,16 +629,16 @@ def _save_outputs(
                 },
                 "refinement": {
                     "max_passes": config.max_refinement_passes,
-                    "actual_passes": actual_refinement_passes,
-                    "annotations_added": refinement_annotations_added,
+                    "actual_passes": result.actual_refinement_passes,
+                    "annotations_added": result.refinement_annotations_added,
                     "overlap_threshold": config.refinement_overlap_threshold,
                 },
-                "mode": mode,
+                "mode": result.mode,
                 "generated": datetime.now().isoformat(timespec="seconds"),
-                "review_stats": review_stats,
+                "review_stats": result.review_stats,
                 "frames": {},
             }
-            for fidx, ann in annotations.items():
+            for fidx, ann in result.annotations.items():
                 frame_data = {
                     "auto": [[list(pt) for pt in poly] for poly in ann.get("auto", [])],
                     "manual": [[list(pt) for pt in poly] for poly in ann.get("manual", [])],
@@ -824,23 +891,19 @@ def run_pipeline(args, config=None):
         json=json_path,
     )
     meta = VideoMeta(fps=fps, frame_w=frame_w, frame_h=frame_h, total_frames=total_frames)
-    _save_outputs(
-        args,
-        annotations,
-        report_data,
-        review_stats,
-        config,
-        method,
-        mode,
-        input_path,
-        paths,
-        meta,
-        enable_debug,
-        enable_report,
-        ffmpeg_available,
-        actual_refinement_passes,
-        refinement_annotations_added,
+    result = PipelineResult(
+        annotations=annotations,
+        report_data=report_data,
+        review_stats=review_stats,
+        method=method,
+        mode=mode,
+        enable_debug=enable_debug,
+        enable_report=enable_report,
+        ffmpeg_available=ffmpeg_available,
+        actual_refinement_passes=actual_refinement_passes,
+        refinement_annotations_added=refinement_annotations_added,
     )
+    _save_outputs(args, result, config, input_path, paths, meta)
 
     total_time = time.time() - start_time
     minutes, seconds = int(total_time // 60), int(total_time % 60)

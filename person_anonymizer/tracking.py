@@ -1,7 +1,7 @@
 """
 Modulo tracking per Person Anonymizer.
 
-Contiene ByteTracker wrapper, bridge SyntheticResults e TemporalSmoother
+Contiene ByteTracker wrapper, TemporalSmoother
 con EMA + ghost boxes per occlusioni temporanee.
 """
 
@@ -58,25 +58,6 @@ def create_tracker(fps, config: PipelineConfig):
     return BYTETracker(tracker_args, frame_rate=int(fps))
 
 
-class SyntheticResults:
-    """Bridge per fornire detections in formato compatibile con ByteTracker."""
-
-    def __init__(self, boxes_with_conf, frame_shape):
-        self.boxes_with_conf = boxes_with_conf
-        self.frame_shape = frame_shape
-
-    def to_tracker_format(self):
-        """
-        Restituisce array (N, 6): [x1, y1, x2, y2, conf, cls].
-        """
-        if not self.boxes_with_conf:
-            return np.empty((0, 6), dtype=np.float32)
-        arr = []
-        for b in self.boxes_with_conf:
-            arr.append([b[0], b[1], b[2], b[3], b[4], 0])
-        return np.array(arr, dtype=np.float32)
-
-
 def update_tracker(tracker, nms_boxes, frame_shape):
     """
     Aggiorna il tracker con i box NMS.
@@ -98,8 +79,8 @@ def update_tracker(tracker, nms_boxes, frame_shape):
 
     try:
         tracks = tracker.update(det, img_info, img_size)
-    except Exception:
-        _log.warning("Tracker update failed, falling back to untracked boxes")
+    except Exception as e:
+        _log.warning("Tracker update failed: %s", e, exc_info=True)
         # Fallback: restituisce i box senza tracking
         results = []
         for i, b in enumerate(nms_boxes):
@@ -113,8 +94,8 @@ def update_tracker(tracker, nms_boxes, frame_shape):
             tid = t.track_id
             score = t.score
             results.append((tid, tlbr[0], tlbr[1], tlbr[2], tlbr[3], float(score)))
-        except Exception:
-            _log.debug("Failed to extract track data, skipping")
+        except Exception as e:
+            _log.debug("Failed to extract track data: %s", e, exc_info=True)
             continue
     return results
 

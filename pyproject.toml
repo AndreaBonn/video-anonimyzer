@@ -1,0 +1,16 @@
+[project]
+name = "person-anonymizer"
+version = "7.1"
+description = "Tool di anonimizzazione persone in video di sorveglianza"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["person_anonymizer"]

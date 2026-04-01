@@ -74,8 +74,12 @@ def add_security_headers(response):
         "img-src 'self' data: blob:; "
         "connect-src 'self'"
     )
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
     if request.is_secure:
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
     return response
 
 
@@ -131,6 +135,7 @@ def upload_video():
 
 
 @app.route("/api/upload-json", methods=["POST"])
+@limiter.limit("20 per minute")
 def upload_json():
     if "json_file" not in request.files:
         return jsonify({"error": "Nessun file JSON inviato"}), 400
@@ -214,16 +219,27 @@ def start_pipeline():
 
 
 @app.route("/api/progress")
+@limiter.limit("10 per minute")
 def progress_stream():
     job_id = request.args.get("job_id")
     if not validate_job_id(job_id):
         return jsonify({"error": "job_id non valido"}), 400
 
     def generate():
-        q = sse_manager.subscribe(job_id)
+        import queue as q_module
+
+        try:
+            q = sse_manager.subscribe(job_id)
+        except RuntimeError:
+            yield f'event: error\ndata: {{"message": "Troppi client connessi"}}\n\n'
+            return
         try:
             while True:
-                event = q.get()
+                try:
+                    event = q.get(timeout=60)
+                except q_module.Empty:
+                    yield ": heartbeat\n\n"
+                    continue
                 if event is None:
                     break
                 yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
@@ -277,11 +293,15 @@ def review_status():
 
 
 @app.route("/api/review/frame/<int:frame_idx>")
+@limiter.limit("120 per minute")
 def review_frame(frame_idx):
     rs = pipeline_runner.review_state
     if not rs.is_active:
         return jsonify({"error": "Nessuna review attiva"}), 404
-    max_w = request.args.get("max_width", 1280, type=int)
+    meta = rs.get_metadata()
+    if not (0 <= frame_idx < meta["total_frames"]):
+        return jsonify({"error": "frame_idx fuori range"}), 400
+    max_w = min(request.args.get("max_width", 1280, type=int), 1920)
     jpeg_bytes, scale = rs.get_frame_jpeg(frame_idx, max_width=max_w)
     if jpeg_bytes is None:
         return jsonify({"error": "Frame non trovato"}), 404
@@ -305,7 +325,28 @@ def review_annotations():
     return jsonify(out)
 
 
+def _validate_annotation_frame(data: dict) -> tuple[bool, str]:
+    """Valida la struttura di una annotazione frame."""
+    if not isinstance(data, dict):
+        return False, "Il payload deve essere un dizionario"
+    for key in ("auto", "manual"):
+        polys = data.get(key, [])
+        if not isinstance(polys, list):
+            return False, f"'{key}' deve essere una lista"
+        for poly in polys:
+            if not isinstance(poly, list) or len(poly) < 3:
+                return False, f"Ogni poligono in '{key}' deve avere almeno 3 punti"
+            for pt in poly:
+                if not (isinstance(pt, (list, tuple)) and len(pt) == 2):
+                    return False, "Ogni punto deve essere [x, y]"
+                x, y = pt
+                if not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
+                    return False, "Coordinate devono essere numeriche"
+    return True, ""
+
+
 @app.route("/api/review/annotations/<int:frame_idx>", methods=["PUT"])
+@limiter.limit("60 per minute")
 def review_update_annotations(frame_idx):
     rs = pipeline_runner.review_state
     if not rs.is_active:
@@ -313,11 +354,15 @@ def review_update_annotations(frame_idx):
     data = request.get_json()
     if not data:
         return jsonify({"error": "Payload JSON mancante"}), 400
+    valid, msg = _validate_annotation_frame(data)
+    if not valid:
+        return jsonify({"error": msg}), 422
     rs.update_annotations(frame_idx, data)
     return jsonify({"ok": True})
 
 
 @app.route("/api/review/confirm", methods=["POST"])
+@limiter.limit("5 per minute")
 def review_confirm():
     rs = pipeline_runner.review_state
     if not rs.is_active:
@@ -332,15 +377,16 @@ def review_confirm():
 
 @app.route("/api/config/defaults")
 def config_defaults():
-    """Restituisce i valori di default di tutti i parametri configurabili."""
+    """Restituisce i valori di default dei parametri configurabili."""
     from config import PipelineConfig
     from dataclasses import asdict
+    from web.pipeline_runner import _ALLOWED_FIELDS
 
     cfg = PipelineConfig()
-    # Converti tuple in liste per la serializzazione JSON
     defaults = {}
     for k, v in asdict(cfg).items():
-        defaults[k] = list(v) if isinstance(v, tuple) else v
+        if k in _ALLOWED_FIELDS:
+            defaults[k] = list(v) if isinstance(v, tuple) else v
     return jsonify(defaults)
 
 

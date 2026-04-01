@@ -256,6 +256,7 @@ class StdoutCapture:
     """Cattura stdout e invia le righe come eventi SSE 'log'."""
 
     _PATH_RE = re.compile(r"/[^\s]*/(uploads|outputs)/[^\s]+")
+    _PHASE_RE = re.compile(r"\[FASE (\d)/5\]")
 
     def __init__(self, sse: SSEManager, job_id: str):
         self._sse = sse
@@ -291,7 +292,7 @@ class StdoutCapture:
             if line:
                 sanitized = self._sanitize_message(line)
                 # Detecta fasi dalla stampa
-                phase_match = re.match(r"\[FASE (\d)/5\]", sanitized)
+                phase_match = self._PHASE_RE.match(sanitized)
                 if phase_match:
                     self._sse.emit(
                         self._job_id,

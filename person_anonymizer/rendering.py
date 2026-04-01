@@ -77,12 +77,18 @@ def render_video(
             cap.release()
             out_writer.release()
             raise RuntimeError(f"Impossibile aprire VideoWriter per {debug_path}")
+    corrupted_frames = 0
     pbar = tqdm(total=total_frames, desc=desc, unit=" frame")
     frame_idx = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
+            if frame_idx < total_frames - 1:
+                corrupted_frames += 1
+                frame_idx += 1
+                pbar.update(1)
+                continue
             break
 
         if fisheye_enabled:
@@ -120,13 +126,21 @@ def render_video(
         pbar.update(1)
 
     pbar.close()
+    if corrupted_frames > 0:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Rendering: %d frame corrotti saltati su %d totali",
+            corrupted_frames,
+            total_frames,
+        )
     cap.release()
     out_writer.release()
     if debug_writer:
         debug_writer.release()
 
 
-def _compute_review_stats(original, reviewed, total_frames):
+def compute_review_stats(original, reviewed, total_frames):
     """Calcola statistiche di review confrontando annotazioni prima e dopo.
 
     Parameters

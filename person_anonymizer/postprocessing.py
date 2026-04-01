@@ -297,6 +297,8 @@ def _merge_overlapping_rects(rects):
         if ri != rj:
             parent[ri] = rj
 
+    # O(n²) overlap check: accettabile per n < 50 (tipico per sorveglianza).
+    # Per n grande, usare sweep-line O(n log n) con ordinamento per x1.
     for i in range(n):
         for j in range(i + 1, n):
             if _rects_overlap(rects[i], rects[j]):
