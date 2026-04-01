@@ -8,8 +8,8 @@
 
     // === State ===
     let jobId = null;
-    let videoPath = null;
-    let jsonPath = null;
+    let videoFilename = null;
+    let jsonFilename = null;
     let eventSource = null;
     let currentPhase = 0;
 
@@ -179,7 +179,7 @@
 
     removeFile.addEventListener("click", () => {
         jobId = null;
-        videoPath = null;
+        videoFilename = null;
         fileInput.value = "";
         fileInfo.classList.add("hidden");
         dropzone.classList.remove("hidden");
@@ -219,7 +219,7 @@
                     return;
                 }
                 jobId = data.job_id;
-                videoPath = data.path;
+                videoFilename = data.filename;
                 fileName.textContent = data.filename;
                 fileSize.textContent = `${data.size_mb} MB`;
                 fileInfo.classList.remove("hidden");
@@ -260,7 +260,7 @@
                     showToast(data.error, "error");
                     return;
                 }
-                jsonPath = data.json_path;
+                jsonFilename = data.filename;
                 jsonFileName.textContent = data.filename;
                 jsonFileInfo.classList.remove("hidden");
                 appendLog(`JSON caricato: ${data.filename}`, "success");
@@ -273,7 +273,7 @@
     });
 
     removeJsonFile.addEventListener("click", () => {
-        jsonPath = null;
+        jsonFilename = null;
         jsonFileInput.value = "";
         jsonFileInfo.classList.add("hidden");
     });
@@ -282,7 +282,7 @@
     btnStart.addEventListener("click", startPipeline);
 
     function updateStartButton() {
-        btnStart.disabled = !videoPath;
+        btnStart.disabled = !videoFilename;
     }
 
     function collectConfig() {
@@ -322,7 +322,7 @@
     }
 
     function startPipeline() {
-        if (!jobId || !videoPath) return;
+        if (!jobId || !videoFilename) return;
 
         const config = collectConfig();
 
@@ -341,9 +341,9 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 job_id: jobId,
-                video_path: videoPath,
+                video_filename: videoFilename,
                 config: config,
-                review_json: jsonPath,
+                review_json_filename: jsonFilename,
             }),
         })
             .then((r) => r.json())

@@ -3,7 +3,6 @@ Flask web app per Person Anonymizer.
 Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
-import os
 import re
 import sys
 import uuid
@@ -11,27 +10,45 @@ import json
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, Response, send_file, stream_with_context
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 
 # Aggiungi parent dir al path per importare person_anonymizer
 PARENT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PARENT_DIR))
 
+from config import SUPPORTED_EXTENSIONS
 from web.sse_manager import SSEManager
 from web.pipeline_runner import PipelineRunner
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024 * 1024  # 10 GB max upload
+app.config.setdefault("RATELIMIT_ENABLED", True)
+
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=[])
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-SUPPORTED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"}
-
 sse_manager = SSEManager()
 pipeline_runner = PipelineRunner(sse_manager, OUTPUT_DIR)
+
+
+# ---------- Error handlers ----------
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    app.logger.exception("Internal server error")
+    return jsonify({"error": "Errore interno del server"}), 500
+
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({"error": "File troppo grande", "max_mb": 10240}), 413
 
 
 # ---------- Helper sicurezza ----------
@@ -57,6 +74,8 @@ def add_security_headers(response):
         "img-src 'self' data: blob:; "
         "connect-src 'self'"
     )
+    if request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
 
 
@@ -72,6 +91,7 @@ def index():
 
 
 @app.route("/api/upload", methods=["POST"])
+@limiter.limit("10 per minute")
 def upload_video():
     if "video" not in request.files:
         return jsonify({"error": "Nessun file video inviato"}), 400
@@ -104,9 +124,7 @@ def upload_video():
 
     size_mb = dest.stat().st_size / (1024 * 1024)
 
-    return jsonify(
-        {"job_id": job_id, "filename": safe_name, "size_mb": round(size_mb, 2), "path": str(dest)}
-    )
+    return jsonify({"job_id": job_id, "filename": safe_name, "size_mb": round(size_mb, 2)})
 
 
 # ---------- Upload JSON annotazioni ----------
@@ -118,7 +136,10 @@ def upload_json():
         return jsonify({"error": "Nessun file JSON inviato"}), 400
 
     f = request.files["json_file"]
-    if not f.filename or not f.filename.endswith(".json"):
+    safe_name = secure_filename(f.filename or "")
+    if not safe_name:
+        return jsonify({"error": "Nome file non valido"}), 400
+    if not safe_name.endswith(".json"):
         return jsonify({"error": "File deve essere .json"}), 400
 
     job_id = request.form.get("job_id")
@@ -131,19 +152,17 @@ def upload_json():
     if not job_dir.exists():
         return jsonify({"error": "Job non trovato"}), 404
 
-    safe_name = secure_filename(f.filename)
-    if not safe_name:
-        return jsonify({"error": "Nome file non valido"}), 400
     dest = job_dir / safe_name
     f.save(str(dest))
 
-    return jsonify({"json_path": str(dest), "filename": safe_name})
+    return jsonify({"filename": safe_name})
 
 
 # ---------- Avvia pipeline ----------
 
 
 @app.route("/api/start", methods=["POST"])
+@limiter.limit("5 per minute")
 def start_pipeline():
     data = request.get_json()
     if not data:
@@ -155,19 +174,34 @@ def start_pipeline():
     if not validate_job_id(job_id):
         return jsonify({"error": "job_id non valido"}), 400
 
-    video_path = data.get("video_path")
-    if not video_path:
-        return jsonify({"error": "video_path mancante"}), 400
+    video_filename = data.get("video_filename")
+    if not video_filename:
+        return jsonify({"error": "video_filename mancante"}), 400
+    safe_video = secure_filename(video_filename)
+    if not safe_video:
+        return jsonify({"error": "video_filename non valido"}), 400
 
-    resolved = Path(video_path).resolve()
+    resolved = (UPLOAD_DIR / job_id / safe_video).resolve()
     if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
         return jsonify({"error": "Path non autorizzato"}), 403
-
     if not resolved.exists():
         return jsonify({"error": "Video non trovato"}), 404
+    video_path = str(resolved)
+
+    review_json = None
+    review_json_filename = data.get("review_json_filename")
+    if review_json_filename:
+        safe_json = secure_filename(review_json_filename)
+        if not safe_json:
+            return jsonify({"error": "review_json_filename non valido"}), 400
+        resolved_json = (UPLOAD_DIR / job_id / safe_json).resolve()
+        if not str(resolved_json).startswith(str(UPLOAD_DIR.resolve())):
+            return jsonify({"error": "Path review_json non autorizzato"}), 403
+        if not resolved_json.exists():
+            return jsonify({"error": "File JSON non trovato"}), 404
+        review_json = str(resolved_json)
 
     config = data.get("config", {})
-    review_json = data.get("review_json")
 
     ok, msg = pipeline_runner.start(job_id, video_path, config, review_json)
     if not ok:

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from web.sse_manager import SSEManager
 from web.review_state import ReviewState
 from config import PipelineConfig
+from person_anonymizer import PipelineError
 
 _CONFIG_VALIDATORS = {
     "operation_mode": lambda v: isinstance(v, str) and v in ("auto", "manual"),
@@ -66,6 +67,50 @@ _BOOL_FIELDS = {
     "enable_confidence_report",
 }
 
+# Campi ammessi nella costruzione di PipelineConfig dalla web form
+_ALLOWED_FIELDS = {
+    "operation_mode",
+    "anonymization_method",
+    "anonymization_intensity",
+    "person_padding",
+    "detection_confidence",
+    "nms_iou_threshold",
+    "yolo_model",
+    "enable_fisheye_correction",
+    "enable_motion_detection",
+    "motion_threshold",
+    "motion_min_area",
+    "motion_padding",
+    "enable_sliding_window",
+    "sliding_window_grid",
+    "sliding_window_overlap",
+    "inference_scales",
+    "tta_augmentations",
+    "quality_clahe_clip",
+    "quality_clahe_grid",
+    "quality_darkness_threshold",
+    "enable_tracking",
+    "track_max_age",
+    "track_match_thresh",
+    "enable_temporal_smoothing",
+    "smoothing_alpha",
+    "ghost_frames",
+    "ghost_expansion",
+    "enable_adaptive_intensity",
+    "adaptive_reference_height",
+    "enable_subframe_interpolation",
+    "interpolation_fps_threshold",
+    "enable_post_render_check",
+    "post_render_check_confidence",
+    "max_refinement_passes",
+    "refinement_overlap_threshold",
+    "enable_debug_video",
+    "enable_confidence_report",
+    "edge_padding_multiplier",
+    "edge_threshold",
+    "nms_iou_internal",
+}
+
 
 def validate_config_params(web_config: dict) -> tuple[bool, str]:
     """
@@ -114,55 +159,12 @@ def _build_config(web_config: dict) -> PipelineConfig:
     if not valid:
         raise ValueError(msg)
 
-    field_map = {
-        "operation_mode": "operation_mode",
-        "anonymization_method": "anonymization_method",
-        "anonymization_intensity": "anonymization_intensity",
-        "person_padding": "person_padding",
-        "detection_confidence": "detection_confidence",
-        "nms_iou_threshold": "nms_iou_threshold",
-        "yolo_model": "yolo_model",
-        "enable_fisheye_correction": "enable_fisheye_correction",
-        "enable_motion_detection": "enable_motion_detection",
-        "motion_threshold": "motion_threshold",
-        "motion_min_area": "motion_min_area",
-        "motion_padding": "motion_padding",
-        "enable_sliding_window": "enable_sliding_window",
-        "sliding_window_grid": "sliding_window_grid",
-        "sliding_window_overlap": "sliding_window_overlap",
-        "inference_scales": "inference_scales",
-        "tta_augmentations": "tta_augmentations",
-        "quality_clahe_clip": "quality_clahe_clip",
-        "quality_clahe_grid": "quality_clahe_grid",
-        "quality_darkness_threshold": "quality_darkness_threshold",
-        "enable_tracking": "enable_tracking",
-        "track_max_age": "track_max_age",
-        "track_match_thresh": "track_match_thresh",
-        "enable_temporal_smoothing": "enable_temporal_smoothing",
-        "smoothing_alpha": "smoothing_alpha",
-        "ghost_frames": "ghost_frames",
-        "ghost_expansion": "ghost_expansion",
-        "enable_adaptive_intensity": "enable_adaptive_intensity",
-        "adaptive_reference_height": "adaptive_reference_height",
-        "enable_subframe_interpolation": "enable_subframe_interpolation",
-        "interpolation_fps_threshold": "interpolation_fps_threshold",
-        "enable_post_render_check": "enable_post_render_check",
-        "post_render_check_confidence": "post_render_check_confidence",
-        "max_refinement_passes": "max_refinement_passes",
-        "refinement_overlap_threshold": "refinement_overlap_threshold",
-        "enable_debug_video": "enable_debug_video",
-        "enable_confidence_report": "enable_confidence_report",
-        "edge_padding_multiplier": "edge_padding_multiplier",
-        "edge_threshold": "edge_threshold",
-        "nms_iou_internal": "nms_iou_internal",
-    }
     kwargs = {}
-    for web_key, config_key in field_map.items():
-        if web_key in web_config:
-            val = web_config[web_key]
-            if config_key == "quality_clahe_grid" and isinstance(val, list):
+    for key, val in web_config.items():
+        if key in _ALLOWED_FIELDS:
+            if key == "quality_clahe_grid" and isinstance(val, list):
                 val = tuple(val)
-            kwargs[config_key] = val
+            kwargs[key] = val
     return PipelineConfig(**kwargs)
 
 
@@ -272,6 +274,11 @@ class StdoutCapture:
 
     def uninstall(self):
         if self._original:
+            # Emetti eventuale testo residuo nel buffer
+            if self._buffer.strip():
+                sanitized = self._sanitize_message(self._buffer.strip())
+                self._sse.emit(self._job_id, "log", {"message": sanitized})
+                self._buffer = ""
             sys.stdout = self._original
 
     def write(self, text):
@@ -440,15 +447,13 @@ class PipelineRunner:
                 },
             )
 
-        except SystemExit as e:
-            # run_pipeline chiama sys.exit(1) su errori
-            exit_code = e.code if isinstance(e.code, int) else 1
+        except PipelineError as e:
             self._sse.emit(
                 job_id,
                 "error",
                 {
                     "job_id": job_id,
-                    "message": f"Pipeline terminata con codice {exit_code}",
+                    "message": str(e),
                 },
             )
 

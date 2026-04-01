@@ -1,219 +1,246 @@
-# Code Roast Report — Person Anonymizer v7.1
+# Code Roast Report — Person Anonymizer
 
 ## Panoramica
-- **Linguaggi rilevati**: Python (backend/pipeline), JavaScript (frontend vanilla), CSS, HTML
-- **File analizzati**: 12 file sorgente (~2500 LOC stimati)
-- **Problemi totali**: 18 (CRITICAL 3 · MAJOR 5 · MINOR 6 · NITPICK 4)
-- **Contesto rilevato**: progetto personale, nessun linter/formatter, nessun CI/CD, nessun test, nessun Dockerfile
-- **Giudizio complessivo**: *Un prototipo impressionante per funzionalità, ma architettonicamente è come un palazzo di 50 piani costruito senza ascensore e con un unico pilone portante.*
+- **Linguaggi rilevati**: Python 3.10+ (typing moderna: `str | None`, `tuple[bool, str]`)
+- **File analizzati**: 17 (10 sorgente Python, 7 test Python)
+- **Problemi totali**: 19 (CRITICAL 1 · MAJOR 6 · MINOR 7 · NITPICK 5)
+- **Contesto rilevato**: tool CLI + web Flask, nessun linter configurato, pytest presente, nessun CI/CD, nessun Docker, nessun pyproject.toml/setup.py, .gitignore completo e corretto
+- **Giudizio complessivo**: Codebase ben strutturata con separazione dei moduli chiara e test significativi, ma con un bug di resource leak critico nella review state, concorrenza gestita in modo ingenuo, e una pipeline monolitica che usa `sys.exit` come meccanismo di errore rendendo il codice dal web non testabile.
 
 ---
 
-## CRITICAL (3 problemi)
+## CRITICAL (1 problema)
 
-### ARCHITETTURA — Il God File da 2000 righe
-**File**: `person_anonymizer/person_anonymizer.py` (righe 1-1999)
-**Problema**: Un singolo file da **2000 righe** che contiene: configurazione, preprocessing, motion detection, multi-scale inference, NMS, tracking, temporal smoothing, intensità adattiva, interpolazione sub-frame, oscuramento, rendering, encoding audio, post-render check, normalizzazione annotazioni, CLI parsing e la pipeline principale. Praticamente ha più responsabilità di un CEO.
-**Perché è grave**: È impossibile testare, rifattorizzare o estendere qualsiasi singolo componente senza rischiare di rompere tutto il resto. Ogni modifica è una roulette russa. Un nuovo sviluppatore apre questo file, vede 2000 righe, e chiude il laptop.
-**Come fixare**: Scomponi in moduli per dominio:
-```
-src/
-├── config.py          # Costanti e dataclass di configurazione
-├── detection/
-│   ├── multiscale.py  # Inferenza multi-scala + TTA
-│   ├── sliding_window.py
-│   └── nms.py
-├── tracking/
-│   ├── bytetrack.py
-│   └── smoother.py
-├── anonymization/
-│   ├── obscure.py     # Pixelation/blur
-│   └── adaptive.py    # Intensità adattiva
-├── rendering/
-│   ├── video.py       # Rendering + debug
-│   └── audio.py       # Encoding H.264 + audio
-├── review/
-│   └── manual.py
-├── postprocessing/
-│   ├── verify.py      # Post-render check
-│   └── normalize.py
-└── pipeline.py        # Orchestrazione (solo colla)
-```
+### CONCORRENZA — `cv2.VideoCapture` condiviso tra thread senza isolamento
 
----
+**File**: `person_anonymizer/web/review_state.py` (righe 133–156)
+**Problema**: `get_frame_jpeg` acquisisce `self._lock`, legge `self._cap` e poi lo usa **fuori dal lock** (riga 144–155). L'operazione `cap.set()` + `cap.read()` non è atomica: se Flask riceve due richieste `/api/review/frame/<idx>` concorrenti, entrambi i thread vedono lo stesso `self._cap`, lo seek e la read si interleave, e il frame restituito a uno dei due client è il frame richiesto dall'altro.
 
-### ARCHITETTURA — 40+ variabili globali come "configurazione"
-**File**: `person_anonymizer/person_anonymizer.py` (righe 30-113)
-**Problema**: La configurazione è un campo minato di **42 variabili globali a livello modulo**, mutate a runtime via `setattr(pa, mod_key, val)` in `pipeline_runner.py:260`. Ecco, hai appena inventato il "global injection pattern". Congratulazioni, non esisteva perché nessuno lo voleva.
-**Perché è grave**: In un contesto multi-thread (Flask con `threaded=True`), due job concorrenti sovrascrivono gli stessi globals a vicenda. Il fatto che `PipelineRunner` limiti a un job alla volta è l'unica cosa che impedisce al castello di crollare. Inoltre, rende impossibile testare componenti in isolamento perché tutti dipendono da stato globale.
-**Come fixare**: Crea una `PipelineConfig` dataclass:
 ```python
-@dataclass
-class PipelineConfig:
-    operation_mode: str = "manual"
-    anonymization_method: str = "pixelation"
-    anonymization_intensity: int = 10
-    # ... etc
-```
-Passala come parametro alle funzioni. Zero globals, zero `setattr`, zero preghiere.
-
----
-
-### ARCHITETTURA — `run_pipeline()`: la God Function da 700+ righe
-**File**: `person_anonymizer/person_anonymizer.py` (righe 1216-1939)
-**Problema**: Una singola funzione di **723 righe** che fa *letteralmente tutto*: validazione input, apertura video, stampa header, caricamento modello, detection loop, refinement loop, revisione manuale, rendering finale, encoding audio, scrittura CSV, scrittura JSON, pulizia temp files e stampa riepilogo. Se fosse una persona, farebbe il chirurgo, l'avvocato e l'idraulico contemporaneamente.
-**Perché è grave**: Impossibile da testare, impossibile da debuggare, impossibile da modificare senza leggere tutto 3 volte. Violi il principio di single responsibility al punto che il principio chiede un ordine restrittivo.
-**Come fixare**: Ogni `[FASE X/5]` diventa una funzione separata. La pipeline orchestratrice diventa:
-```python
-def run_pipeline(config: PipelineConfig, args: PipelineArgs):
-    ctx = setup_pipeline(config, args)
-    ctx.annotations = run_detection(ctx) if not args.review else load_from_json(args.review)
-    ctx.annotations = run_refinement(ctx)
-    ctx.annotations = run_review(ctx) if ctx.mode == "manual" else ctx.annotations
-    render_final(ctx)
-    postprocess(ctx)
-```
-
----
-
-## MAJOR (5 problemi)
-
-### TESTING — Zero test. Nessuno. Nada. Zilch.
-**File**: Assente (nessuna directory `tests/`)
-**Problema**: Un progetto con multi-scale inference, NMS, tracking, temporal smoothing, interpolazione, post-render verification... e **zero test**. Neanche uno. Nemmeno un test che verifica che 2+2=4 per sentirsi in compagnia.
-**Perché è grave**: Ogni modifica è un atto di fede. Non sai se funziona fino a quando non elabori un video di 5 minuti e guardi il risultato con i tuoi occhi umani. Algoritmi come NMS, IoU, EMA smoothing, ghost boxes sono perfetti candidati per unit test. Il fatto che funzionino è pura fortuna.
-**Come fixare**: Inizia da dove il rischio è più alto:
-1. `apply_nms()` — input/output deterministico
-2. `compute_adaptive_intensity()` — funzione pura
-3. `compute_iou_boxes()` — matematica verificabile
-4. `_merge_overlapping_rects()` — algoritmo con edge case
-5. `TemporalSmoother` — stato verificabile
-
----
-
-### ARCHITETTURA — `os.chdir()` in un thread Flask
-**File**: `person_anonymizer/web/pipeline_runner.py` (riga 246)
-**Problema**: `os.chdir(pa_dir)` è un'operazione **globale di processo**, non di thread. In un server Flask con `threaded=True`, cambiare la working directory in un thread cambia la working directory per TUTTI i thread. Il fatto che funzioni è solo perché c'è un solo job alla volta. Ma Flask continua a servire richieste HTTP durante l'elaborazione.
-**Perché è grave**: Se una qualsiasi richiesta Flask dipendesse dal cwd (e `send_file` con path relativi lo farebbe), otterresti risultati imprevedibili. È una bomba a orologeria.
-**Come fixare**: Usa path assoluti ovunque e elimina `os.chdir()`. Il modello YOLO può essere caricato specificando il path assoluto: `YOLO(str(Path(pa.__file__).parent / YOLO_MODEL))`.
-
----
-
-### MANUTENIBILITA' — `pipeline_runner.py` patcha globali e stdout come un malware
-**File**: `person_anonymizer/web/pipeline_runner.py` (righe 62-144, 146-187, 248-260)
-**Problema**: Per far comunicare la pipeline con il frontend, si monkey-patcha `tqdm`, si redirecta `sys.stdout`, e si mutano i globals del modulo con `setattr`. È ingegnoso, ma anche disgustoso. È come risolvere un problema di comunicazione mettendo un microfono nascosto nella stanza.
-**Perché è grave**: Qualsiasi libreria che scrive su stdout durante l'elaborazione (e OpenCV ne ha parecchie) contribuirà al flusso SSE senza che tu lo voglia. Se tqdm cambia la sua API interna, tutto esplode. E il `setattr` su globals è già stato roastato sopra.
-**Come fixare**: Usa un pattern di callback o un event bus:
-```python
-class PipelineCallbacks:
-    def on_progress(self, current, total, desc): ...
-    def on_phase(self, phase_num, label): ...
-    def on_log(self, message): ...
-```
-Passalo alla pipeline, e che tqdm viva in pace.
-
----
-
-### MANUTENIBILITA' — `manual_reviewer.py`: 310 righe, una sola funzione con 8 closure
-**File**: `person_anonymizer/manual_reviewer.py` (righe 13-309)
-**Problema**: `run_manual_review()` è una funzione di 297 righe che contiene 8 funzioni closure annidate (`get_frame`, `display_to_original`, `original_to_display`, `point_in_polygon`, `render_display`, `mouse_callback`) tutte che accedono a variabili `nonlocal`. È un universo autocontenuto. Uno Spaghetti Monster delle closure.
-**Perché è grave**: Non puoi testare nessuna delle closure individualmente. Il flow control è sparpagliato tra key codes hardcodati (83, 81, 13, 26, 27) e flag booleani.
-**Come fixare**: Crea una classe `ManualReviewer` con stato, e metodi separati per ogni azione. I key codes diventano un dizionario di mapping.
-
----
-
-### ERROR HANDLING — Bare `except Exception` silenzioso nel tracker
-**File**: `person_anonymizer/person_anonymizer.py` (righe 449-456, 463-466)
-**Problema**: Il fallback del tracker ingoia l'eccezione e restituisce box senza tracking come se niente fosse. Il `continue` nell'inner loop pure.
-```python
-except Exception:
-    # Fallback: restituisce i box senza tracking
-    results = []
+# il cap viene letto dentro il lock...
+with self._lock:
+    if self._cap is None or not self._cap.isOpened():
+        return None, 1.0
+    self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    ret, frame = self._cap.read()
+    fisheye = self._fisheye_enabled   # ← qui si esce dal lock
     ...
+# ...ma cap.set/cap.read avvengono già fuori dal lock
 ```
-**Perché è grave**: Se il tracker fallisce silenziosamente, non lo saprai mai. Perderai il tracking su interi video senza alcun warning. In un tool GDPR-critical, il silenzio è il peggior errore possibile.
-**Come fixare**: Logga l'errore con severity, e alza un warning nell'output. L'utente deve sapere che il tracking è degradato.
 
----
+**Perché è grave**: La review manuale è il momento in cui un operatore corregge i poligoni di anonimizzazione. Un frame sbagliato mostrato al reviewer significa che l'operatore modifica annotazioni sul frame sbagliato — l'output finale contiene persone non anonimizzate. Il bug è deterministicamente riproducibile aprendo due tab del browser sulla stessa review.
 
-## MINOR (6 problemi)
+**Come fixare**: Spostare l'intero blocco `cap.set/cap.read` dentro il lock, oppure tenere il cap fuori dallo stato condiviso e aprirlo per ogni richiesta (approccio più semplice e più corretto per un uso poco frequente):
 
-### MANUTENIBILITA' — `print()` come unico sistema di logging
-**File**: Trovato in 3 file: `person_anonymizer.py`, `camera_calibration.py`, `manual_reviewer.py`
-**Problema**: Tutto il logging è fatto con `print()`. In un contesto CLI è accettabile, ma la web app patcha `sys.stdout` per catturarlo — il che dimostra che serviva un sistema di logging vero.
-**Come fixare**: Usa il modulo `logging` di Python. Una riga di setup.
-
----
-
-### SICUREZZA UI — `innerHTML` con dati utente nel frontend
-**File**: `person_anonymizer/web/static/js/app.js` (righe 539-544)
-**Problema**: I nomi dei file di output vengono inseriti via `innerHTML` senza sanitizzazione:
-```javascript
-item.innerHTML = `<span class="result-name">${f.name}</span>...`;
+```python
+with self._lock:
+    if self._cap is None or not self._cap.isOpened():
+        return None, 1.0
+    self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+    ret, frame = self._cap.read()
+    if not ret:
+        return None, 1.0
+    fisheye = self._fisheye_enabled
+    map1 = self._undist_map1
+    map2 = self._undist_map2
+# Il resto (resize, encode) fuori dal lock va bene perché opera su una copia locale
 ```
-Un filename malevolo potrebbe contenere tag HTML.
-**Come fixare**: Usa `textContent` per i dati utente, o crea gli elementi DOM con `createElement`.
 
 ---
 
-### PERFORMANCE — VideoCapture aperto per ogni frame in review_state
-**File**: `person_anonymizer/web/review_state.py` (righe 122-129)
-**Problema**: `get_frame_jpeg()` apre e chiude un `cv2.VideoCapture` per ogni singola richiesta di frame. Seeking in un video MP4 è costoso, e la creazione dell'oggetto pure.
-**Come fixare**: Mantieni un `VideoCapture` aperto per la durata della review, protetto dal lock.
+## MAJOR (6 problemi)
+
+### ARCHITETTURA — `sys.exit()` come meccanismo di errore nella pipeline CLI
+
+**File**: `person_anonymizer/person_anonymizer.py` (righe 66, 592, 595, 599, 625, 633)
+**Problema**: `run_pipeline` chiama `sys.exit(1)` su ogni condizione di errore (file non trovato, formato non supportato, video non apribile). Quando la pipeline è invocata dal web via `PipelineRunner._run`, questo viene catturato dal `except SystemExit` — ma il messaggio all'utente è generico ("Pipeline terminata con codice 1"), e non c'è modo di testare i percorsi di errore senza avviare un processo reale.
+
+**Perché è grave**: Rende `run_pipeline` una funzione non testabile per i suoi percorsi critici (file mancante, formato non supportato). I test esistenti non coprono questi path. Viola il principio di separazione tra logica di business e gestione dell'uscita del processo: `sys.exit` appartiene solo a `main()`.
+
+**Come fixare**: Sollevare eccezioni specifiche (`FileNotFoundError`, `ValueError`) invece di `sys.exit`. Confinare `sys.exit` in `main()` che cattura le eccezioni e le traduce in codice di uscita.
 
 ---
 
-### CONFIGURAZIONE — Dati nel README non allineati con il codice
-**File**: `README.md` (righe 403-404)
-**Problema**: Il README dice `DETECTION_CONFIDENCE = 0.35` e `NMS_IOU_THRESHOLD = 0.45`, ma il codice ha `0.20` e `0.55`. Il README mente all'utente.
-**Come fixare**: Allinea i valori, o meglio ancora, genera la documentazione dal codice.
+### ARCHITETTURA — Monkey-patching globale di `tqdm` in un thread condiviso
+
+**File**: `person_anonymizer/web/pipeline_runner.py` (righe 179–250)
+**Problema**: `TqdmCapture.install()` sostituisce `tqdm.tqdm` e `person_anonymizer.tqdm` globalmente nel processo. Se mai venissero eseguiti due job concorrentemente (oggi non accade perché `PipelineRunner` blocca il secondo), entrambi scriverebbero sullo stesso `tqdm` patchato con il `job_id` del secondo job. Il design è fragile per definizione: fa affidamento su un invariante di singolo job che è enforced da un lock separato, non dalla struttura del codice.
+
+**Perché è grave**: Il monkey-patching di un modulo globale è un anti-pattern di testabilità e manutenibilità. Rende impossibile testare la cattura del progresso in isolamento senza effetti collaterali globali. Un futuro refactoring che aggiunga parallelismo romperà silenziosamente il progresso SSE.
+
+**Come fixare**: Passare una callback `on_progress` opzionale alla pipeline, che `run_pipeline` chiama a ogni frame. La web invoca la pipeline con la callback; la CLI la lascia `None`. Eliminazione completa del monkey-patching.
 
 ---
 
-### MANUTENIBILITA' — Key codes hardcodati nell'interfaccia OpenCV
-**File**: `person_anonymizer/manual_reviewer.py` (righe 259, 266)
-**Problema**: `83`, `81`, `32`, `13`, `26`, `27` sono codici magici senza nome. Devi aprire la tabella ASCII per capire cosa fanno.
-**Come fixare**: Definisci costanti con nomi parlanti: `KEY_RIGHT = 83`, `KEY_ENTER = 13`.
+### PERFORMANCE — `_merge_overlapping_rects` con complessità O(n²) per iterazione
+
+**File**: `person_anonymizer/postprocessing.py` (righe 262–295)
+**Problema**: L'algoritmo di merge usa un loop while `changed` che ri-scansione tutta la lista a ogni iterazione. Nel caso peggiore (n rettangoli a catena) esegue O(n²) confronti per passata × O(n) passate = O(n³). Su video con scene dense (molte persone, molti frame), `normalize_annotations` può richiamare questa funzione su centinaia di frame.
+
+**Perché è grave**: Con 50 rettangoli per frame e 1000 frame il calcolo è trascurabile; con 200+ rettangoli per frame (scene molto dense) la funzione diventa il collo di bottiglia del comando `--normalize`. Il pattern del problema è già nella MEMORY come ricorrente.
+
+**Come fixare**: Union-Find (Disjoint Set Union) riduce a O(n α(n)) ≈ O(n). In alternativa, ordinare i rettangoli per `x` e usare uno sweep line — riduce comunque a O(n log n).
 
 ---
 
-### CONFIGURAZIONE — `.venv` dentro `person_anonymizer/`
-**File**: `person_anonymizer/.venv/`
-**Problema**: C'è un virtual environment dentro la sottodirectory del package. Perché? C'è già `.venv` nella root del progetto. Due venv = confusione garantita.
-**Come fixare**: Elimina `person_anonymizer/.venv/` e usa solo quello nella root.
+### MANUTENIBILITÀ — `_save_outputs` con 22 parametri
+
+**File**: `person_anonymizer/person_anonymizer.py` (righe 460–484)
+**Problema**: `_save_outputs` ha 22 parametri posizionali. La firma occupa 25 righe solo per la dichiarazione, e ogni call site trasmette altrettanti argomenti in ordine rigido. Aggiungere o riordinare un parametro richiede modifiche in ogni punto di chiamata.
+
+**Perché è grave**: Viola il limite di 4 parametri per funzione indicato dalle regole di qualità del progetto. Rende le chiamate opaque (non si capisce cosa è `enable_debug` vs `enable_report` senza contare le posizioni). Ogni nuova feature che aggiunge un file di output deve estendere ulteriormente la firma.
+
+**Come fixare**: Introdurre un dataclass `OutputPaths` che raggruppi tutti i path e un `RenderContext` che raggruppi fps/frame_w/frame_h/etc. La firma si riduce a 4-5 parametri semanticamente chiari.
 
 ---
 
-## NITPICK (4 problemi)
+### BUG — `_run_refinement_loop` esegue il rendering anche se `review_json` è già fornito
 
-### NAMING — Mix di italiano e inglese nei commenti e nelle variabili
-Trovato in tutti i file Python. I commenti sono in italiano, le variabili in inglese, le docstring in italiano. "Errore: impossibile aprire il video per la revisione" convive con `enhanced = enhance_frame()`. Scegline uno e basta.
+**File**: `person_anonymizer/person_anonymizer.py` (righe 735–750)
+**Problema**: Quando l'utente passa `--review file.json`, le annotazioni vengono caricate da JSON, la cap viene rilasciata (riga 727), e poi `_run_refinement_loop` viene chiamata incondizionatamente. Il loop di refinement apre `temp_video_path` che non esiste ancora (non è stato fatto nessun rendering precedente) e chiama `render_video` che sovrascrive i risultati. Il comportamento atteso con `--review` è saltare la detection e procedere alla revisione manuale, non rieseguire tutto il ciclo di refinement.
 
-### STILE — `MODALITA'` con apostrofo invece di accento
-Trovato in `person_anonymizer.py` (righe 29, 71, 87) e nel README. `MODALITA'` e `INTENSITA'` sono il "Comic Sans" dell'accentazione italiana. Usa `MODALITÀ` e `INTENSITÀ`.
+**Perché è grave**: Con `--review` + `--mode manual`, l'utente si aspetta di rivedere le annotazioni caricate. Invece il codice esegue un rendering intermedio inutile (lento, usa CPU/GPU) e potrebbe fallire se il file di output temp non è ancora scrivibile.
 
-### STRUTTURA — Manca `CLAUDE.md` nella root del progetto (presente solo per il sub-progetto)
-Hai un `.claude/` ma non un `CLAUDE.md` nella root come previsto dalle tue stesse convenzioni.
+**Come fixare**: Aggiungere un guard esplicito prima di `_run_refinement_loop`:
 
-### JS STYLE — `var` usato in `review-editor.js` anziché `let`/`const`
-Tutto il file usa `var` come se fossimo nel 2014. Il resto del JS (`app.js`) usa `let`/`const`. Inconsistenza tra i due file.
+```python
+if not review_json:
+    annotations, actual_refinement_passes, refinement_annotations_added = _run_refinement_loop(...)
+else:
+    actual_refinement_passes, refinement_annotations_added = 0, 0
+```
+
+---
+
+### RESOURCE LEAK — `cv2.VideoCapture` non rilasciato in caso di eccezione in `setup()`
+
+**File**: `person_anonymizer/web/review_state.py` (righe 82–86)
+**Problema**: In `setup()`, se `cv2.VideoCapture(video_path)` riesce ma una delle operazioni successive lancia un'eccezione (improbabile ma possibile), il `VideoCapture` appena creato non viene mai rilasciato. Non c'è un blocco `try/finally` né un context manager.
+
+**Perché è grave**: `cv2.VideoCapture` mantiene un file handle sul video originale. In un sistema con molti job consecutivi, i leak si accumulano. Su Linux ogni processo ha un limite di file descriptor aperti; su macchine con GPU, i video aperti competono per i buffer di decodifica.
+
+**Come fixare**: Avvolgere il setup del cap in un try/except che garantisce il release in caso di errore, o usare un context manager custom per `VideoCapture`.
+
+---
+
+## MINOR (7 problemi)
+
+### MANUTENIBILITÀ — `_field_map` in `_build_config` è una mappa identità inutile
+
+**File**: `person_anonymizer/web/pipeline_runner.py` (righe 117–166)
+**Problema**: `field_map` mappa ogni chiave a se stessa (es. `"operation_mode": "operation_mode"`). L'unica eccezione utile è la conversione `quality_clahe_grid` da lista a tupla. Il loop che la utilizza è equivalente a `kwargs = {k: v for k, v in web_config.items() if k in set(field_map.keys())}`.
+
+**Come fixare**: Eliminare `field_map`, usare un set `_ALLOWED_FIELDS` per il whitelist, e gestire la conversione `quality_clahe_grid` esplicitamente dopo il loop.
+
+---
+
+### MANUTENIBILITÀ — `_build_config` non valida `adaptive_reference_height` dalla web
+
+**File**: `person_anonymizer/web/pipeline_runner.py` (riga 34)
+**Problema**: `adaptive_reference_height` è in `_CONFIG_VALIDATORS` (correttamente), ma non è presente in `field_map`. Se il frontend invia questo parametro, viene validato ma poi silenziosamente scartato — non finisce nel `kwargs` di `PipelineConfig`. Il valore default viene usato indipendentemente dall'input.
+
+**Come fixare**: Aggiungere `"adaptive_reference_height": "adaptive_reference_height"` a `field_map` (o, dopo il fix del punto precedente, al set `_ALLOWED_FIELDS`).
+
+---
+
+### ERROR HANDLING — `encode_with_audio` inghiotte errori di ffmpeg senza logging
+
+**File**: `person_anonymizer/postprocessing.py` (righe 31–66)
+**Problema**: Il doppio `except ffmpeg.Error` degrada silenziosamente: prima tenta senza audio, poi fa una copia grezza dell'AVI intermedio. L'utente non riceve nessun avviso che l'output è un AVI non compresso invece di H.264. Non c'è logging nemmeno al livello WARNING.
+
+**Come fixare**: Aggiungere `logging.warning(f"ffmpeg con audio fallito, tentativo senza audio: {e}")` e `logging.warning(f"ffmpeg completamente fallito, copia grezza AVI: {e}")`.
+
+---
+
+### MANUTENIBILITÀ — `render_video` non verifica che `out_writer` sia inizializzato correttamente
+
+**File**: `person_anonymizer/rendering.py` (riga 69)
+**Problema**: `cv2.VideoWriter` restituisce un oggetto anche se non riesce ad aprire il file di output (es. percorso non scrivibile, codec non disponibile). `out_writer.isOpened()` non viene mai verificato. Il loop scrive frame su un writer silenziosamente non funzionante, e l'utente scopre il problema solo alla fine quando il file di output è vuoto o corrotto.
+
+**Come fixare**: Aggiungere subito dopo la costruzione:
+```python
+if not out_writer.isOpened():
+    raise RuntimeError(f"Impossibile aprire VideoWriter per {output_path}")
+```
+
+---
+
+### CONFIG — `camera_matrix: object = None` in `PipelineConfig` è tipizzato male
+
+**File**: `person_anonymizer/config.py` (righe 38–39)
+**Problema**: I campi `camera_matrix` e `dist_coefficients` sono annotati come `object`. Il tipo corretto è `np.ndarray | None`. L'annotazione `object` non fornisce nessun valore documentale o di type checking: qualunque cosa è `object` in Python.
+
+**Come fixare**: `camera_matrix: "np.ndarray | None" = None` (o `Optional[np.ndarray]` con `from __future__ import annotations`).
+
+---
+
+### TESTING — `test_config.py` testa solo getter di dataclass, non contratti
+
+**File**: `tests/test_config.py` (righe 1–172)
+**Problema**: I 28 test in `TestPipelineConfigDefaults` e `TestPipelineConfigCustomValues` verificano esclusivamente che `PipelineConfig(x=val).x == val`. Questo non testa nessun contratto: se si sbagliasse il tipo di default o si introducesse una guardia nel `__post_init__`, questi test non lo catturerebbero. I test rischiano di essere tautologici nel senso che verificano il comportamento della `dataclass` di Python standard, non la logica del progetto.
+
+**Come fixare**: Concentrare i test su invarianti osservabili: `inference_scales` non deve mai essere vuota per default, `anonymization_intensity` deve essere positivo, `quality_clahe_grid` deve essere una tupla di due interi. Aggiungere test per la serializzazione JSON (il path `config_defaults()` del web converte tuple in liste).
+
+---
+
+### MANUTENIBILITÀ — Duplicazione `SUPPORTED_EXTENSIONS` tra `config.py` e `web/app.py`
+
+**File**: `person_anonymizer/config.py` (riga 13), `person_anonymizer/web/app.py` (riga 31)
+**Problema**: La stessa costante `SUPPORTED_EXTENSIONS = {".mp4", ".m4v", ...}` è definita in entrambi i file con contenuto identico. Se si aggiunge un formato (es. `.ts`), va aggiornato in due posti.
+
+**Come fixare**: `web/app.py` deve importare `from config import SUPPORTED_EXTENSIONS` invece di ridichiarare il set.
+
+---
+
+## NITPICK (5 problemi)
+
+### `manual_reviewer.py` non ha test e non è coperto dalla suite
+
+Il modulo esegue UI OpenCV interattiva (`cv2.imshow`, `cv2.waitKey`) — correttamente esclusa dai test unitari. Non è un problema blocante ma va documentato esplicitamente (es. con un commento nel conftest) in modo che i futuri maintainer non si chiedano perché manca.
+
+---
+
+### `camera_calibration.py` usa `os.path` invece di `pathlib`
+
+Il resto del codebase usa `pathlib.Path` in modo consistente. `camera_calibration.py` usa `os.path.isdir`, `os.path.join`, `os.path.basename`, `glob.glob` — stile legacy. Non causa bug ma è incoerente con il resto.
+
+---
+
+### `update_tracker` ricrea `_log = logging.getLogger(__name__)` a ogni chiamata
+
+**File**: `person_anonymizer/tracking.py` (riga 86)
+`logging.getLogger` è thread-safe e cachato internamente, quindi non è un bug di performance grave, ma è idiomaticamente sbagliato: il logger dovrebbe essere una costante a livello di modulo (`_LOG = logging.getLogger(__name__)` fuori dalla funzione).
+
+---
+
+### `StdoutCapture` non gestisce il buffer residuo alla chiusura
+
+**File**: `person_anonymizer/web/pipeline_runner.py` (righe 253–300)
+Quando la pipeline termina e `uninstall()` viene chiamato, `self._buffer` potrebbe contenere testo senza `\n` finale (es. l'ultima riga di progresso senza newline). Quel testo viene perso silenziosamente. In pratica, i messaggi importanti terminano sempre con `\n`, quindi l'impatto è nullo, ma `flush()` dovrebbe emettere il buffer residuo.
+
+---
+
+### `firebase-debug.log` committato nella directory sorgente
+
+**File**: `person_anonymizer/firebase-debug.log`
+Il file è presente nella directory sorgente. Il `.gitignore` lo esclude con `*.log`, ma il file è già tracciato da git (il `.gitignore` non rimuove file già in staging/committed). Bisogna rimuoverlo con `git rm --cached person_anonymizer/firebase-debug.log`. Inoltre la sua presenza suggerisce che Firebase è stato integrato o testato in questa directory — cosa non documentata in CLAUDE.md.
 
 ---
 
 ## Priorità di Refactoring Consigliate
 
-1. **Scomponi `person_anonymizer.py`** — È il problema #1. Ogni altro miglioramento è impossibile senza questo. Crea moduli, elimina globals, passa configurazione come oggetto.
+1. **Fix il race condition su `get_frame_jpeg`** — È l'unico CRITICAL, direttamente in un path funzionale della review manuale. Un reviewer che usa due tab vede frame sbagliati e produce annotazioni errate. 30 minuti di fix.
 
-2. **Aggiungi test sulle funzioni pure** — `apply_nms()`, `compute_iou_boxes()`, `compute_adaptive_intensity()`, `_merge_overlapping_rects()` sono tutte funzioni pure testabili in 2 minuti. Inizia da queste.
+2. **Sostituire `sys.exit` con eccezioni in `run_pipeline`** — Sblocca la testabilità dei percorsi di errore critici (file non trovato, formato non supportato) e rimuove la dipendenza dal `except SystemExit` in `PipelineRunner`. Refactoring di 1-2 ore con impatto sulla copertura dei test.
 
-3. **Elimina il monkey-patching nella web app** — Sostituisci stdout capture + tqdm patch con un sistema di callback pulito. Elimina `os.chdir()` e `setattr` sui globals.
+3. **Aggiungere guard per `review_json` prima di `_run_refinement_loop`** — Bug funzionale: con `--review file.json`, il refinement loop non dovrebbe girare. Fix di 5 righe.
 
-4. **Fixa le vulnerabilità di sicurezza** — Path traversal, XSS, SSRF sono tutti presenti (vedi Security Audit). Non servono in un tool locale, ma se questo repo va su GitHub, qualcuno lo deployerà in rete.
+4. **Aggiungere `adaptive_reference_height` a `field_map` in `_build_config`** — Il parametro è validato ma scartato silenziosamente. Bug subdolo: l'utente imposta il valore nel frontend e non ha effetto. Fix di 1 riga.
 
-5. **Allinea documentazione e codice** — Il README con valori sbagliati è peggio di nessun README.
+5. **Deduplicare `SUPPORTED_EXTENSIONS`** — `web/app.py` deve importare da `config.py`. Due file che divergono su questa lista produrrebbero un bug dove un formato accettato dall'upload viene poi rifiutato dalla pipeline CLI.
 
 ---
 
 ## Verdict finale
 
-*Il tuo tool fa cose impressionanti: multi-scale inference, ByteTrack, temporal smoothing con ghost boxes, auto-refinement loop, interfaccia web con SSE in tempo reale. È evidente che sai cosa stai facendo a livello algoritmico. Ma architettonicamente, hai messo un motore di Formula 1 in una Fiat Panda senza cinture di sicurezza. Il file da 2000 righe con 42 globals mutati via setattr in un thread Flask è un crimine contro l'ingegneria del software — l'unica ragione per cui funziona è che solo tu lo usi e solo un job alla volta. Scomponi, testa, e sarà un progetto di cui andare davvero fiero.*
+Il codebase mostra chiaramente l'investimento fatto sulla qualità: la decomposizione in moduli è corretta, la suite di test copre i path puri in modo solido, e la validazione degli input web è più seria di quanto si veda in molti progetti simili. Il gap principale non è lo stile ma la concorrenza: il componente più delicato del sistema — la review manuale, dove si decide cosa viene anonimizzato — ha un race condition che compromette la correttezza del prodotto finale.

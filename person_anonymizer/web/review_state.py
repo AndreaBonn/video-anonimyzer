@@ -78,11 +78,15 @@ class ReviewState:
             self._fisheye_enabled = fisheye_enabled
             self._undist_map1 = undist_map1
             self._undist_map2 = undist_map2
-            # Apri VideoCapture una sola volta per tutta la review
             if self._cap is not None:
                 self._cap.release()
-            self._cap = cv2.VideoCapture(video_path)
-            self._active = True
+                self._cap = None
+            try:
+                self._cap = cv2.VideoCapture(video_path)
+                self._active = True
+            except Exception:
+                self._cap = None
+                raise
             self._event.clear()
 
     def wait_for_completion(self):
@@ -130,6 +134,10 @@ class ReviewState:
             (jpeg_bytes, scale_factor) dove scale_factor è il rapporto
             tra la dimensione visualizzata e quella originale.
         """
+        # cap.set/cap.read e la lettura di fisheye/map1/map2 avvengono
+        # interamente dentro il lock: nessuna richiesta concorrente può
+        # intercalare un secondo cap.set tra set e read di questa chiamata.
+        # remap/resize/imencode operano su copie locali e non richiedono il lock.
         with self._lock:
             if self._cap is None or not self._cap.isOpened():
                 return None, 1.0

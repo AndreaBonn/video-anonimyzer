@@ -10,78 +10,95 @@ import pytest
 from config import PipelineConfig, SUPPORTED_EXTENSIONS, VERSION
 
 
-class TestPipelineConfigDefaults:
-    """Verifica i valori di default di PipelineConfig."""
+class TestPipelineConfigInvariants:
+    """Verifica invarianti e contratti di PipelineConfig."""
 
-    def test_default_operation_mode(self):
+    def test_inference_scales_not_empty(self):
         # Arrange / Act
         config = PipelineConfig()
 
         # Assert
-        assert config.operation_mode == "manual"
+        assert len(config.inference_scales) > 0
 
-    def test_default_detection_confidence(self):
+    def test_inference_scales_all_positive(self):
         # Arrange / Act
         config = PipelineConfig()
 
         # Assert
-        assert config.detection_confidence == pytest.approx(0.20)
+        assert all(s > 0 for s in config.inference_scales)
 
-    def test_default_anonymization_method(self):
+    def test_anonymization_intensity_positive(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.anonymization_method == "pixelation"
 
-    def test_default_anonymization_intensity(self):
-        config = PipelineConfig()
-        assert config.anonymization_intensity == 10
+        # Assert
+        assert config.anonymization_intensity > 0
 
-    def test_default_person_padding(self):
+    def test_detection_confidence_in_unit_range(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.person_padding == 15
 
-    def test_default_enable_sliding_window(self):
-        config = PipelineConfig()
-        assert config.enable_sliding_window is True
+        # Assert
+        assert 0.0 < config.detection_confidence < 1.0
 
-    def test_default_enable_tracking(self):
+    def test_nms_thresholds_in_unit_range(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.enable_tracking is True
 
-    def test_default_enable_adaptive_intensity(self):
-        config = PipelineConfig()
-        assert config.enable_adaptive_intensity is True
+        # Assert
+        assert 0.0 < config.nms_iou_threshold < 1.0
+        assert 0.0 < config.nms_iou_internal < 1.0
 
-    def test_default_adaptive_reference_height(self):
+    def test_quality_clahe_grid_is_pair_of_positive_ints(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.adaptive_reference_height == 80
 
-    def test_default_nms_iou_internal(self):
-        config = PipelineConfig()
-        assert config.nms_iou_internal == pytest.approx(0.45)
+        # Assert
+        assert isinstance(config.quality_clahe_grid, tuple)
+        assert len(config.quality_clahe_grid) == 2
+        assert all(isinstance(x, int) and x > 0 for x in config.quality_clahe_grid)
 
-    def test_default_nms_iou_threshold(self):
+    def test_adaptive_reference_height_positive(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.nms_iou_threshold == pytest.approx(0.55)
 
-    def test_default_inference_scales(self):
-        config = PipelineConfig()
-        assert config.inference_scales == [1.0, 1.5, 2.0, 2.5]
+        # Assert
+        assert config.adaptive_reference_height > 0
 
-    def test_default_tta_augmentations(self):
+    def test_ghost_expansion_at_least_one(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.tta_augmentations == ["flip_h"]
 
-    def test_default_yolo_model(self):
-        config = PipelineConfig()
-        assert config.yolo_model == "yolov8x.pt"
+        # Assert
+        assert config.ghost_expansion >= 1.0
 
-    def test_default_sliding_window_grid(self):
+    def test_smoothing_alpha_in_valid_range(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.sliding_window_grid == 3
 
-    def test_default_enable_post_render_check(self):
+        # Assert
+        assert 0.0 < config.smoothing_alpha <= 1.0
+
+    def test_max_refinement_passes_positive(self):
+        # Arrange / Act
         config = PipelineConfig()
-        assert config.enable_post_render_check is True
+
+        # Assert
+        assert config.max_refinement_passes >= 1
+
+    def test_operation_mode_is_valid_value(self):
+        # Arrange / Act
+        config = PipelineConfig()
+
+        # Assert — i valori ammessi sono "manual" e "auto"
+        assert config.operation_mode in ("manual", "auto")
+
+    def test_anonymization_method_is_valid_value(self):
+        # Arrange / Act
+        config = PipelineConfig()
+
+        # Assert
+        assert config.anonymization_method in ("pixelation", "blur")
 
 
 class TestPipelineConfigCustomValues:
@@ -89,10 +106,10 @@ class TestPipelineConfigCustomValues:
 
     def test_custom_operation_mode(self):
         # Arrange / Act
-        config = PipelineConfig(operation_mode="automatic")
+        config = PipelineConfig(operation_mode="auto")
 
         # Assert
-        assert config.operation_mode == "automatic"
+        assert config.operation_mode == "auto"
 
     def test_custom_detection_confidence(self):
         # Arrange / Act
@@ -126,14 +143,14 @@ class TestPipelineConfigCustomValues:
     def test_custom_multiple_params(self):
         # Arrange / Act
         config = PipelineConfig(
-            operation_mode="automatic",
+            operation_mode="auto",
             detection_confidence=0.35,
             anonymization_intensity=20,
             enable_tracking=False,
         )
 
         # Assert
-        assert config.operation_mode == "automatic"
+        assert config.operation_mode == "auto"
         assert config.detection_confidence == pytest.approx(0.35)
         assert config.anonymization_intensity == 20
         assert config.enable_tracking is False

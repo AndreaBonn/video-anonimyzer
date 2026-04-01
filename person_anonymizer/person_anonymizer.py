@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,37 @@ from postprocessing import (
     normalize_annotations,
 )
 
+
+class PipelineError(Exception):
+    """Errore generico della pipeline."""
+
+
+class PipelineInputError(PipelineError):
+    """Errore di input (file non trovato, formato non supportato, ecc.)."""
+
+
+@dataclass
+class OutputPaths:
+    """Percorsi dei file di output della pipeline."""
+
+    output: str
+    temp_video: str
+    temp_debug: str
+    debug: str
+    report: str
+    json: str
+
+
+@dataclass
+class VideoMeta:
+    """Metadati del video sorgente."""
+
+    fps: float
+    frame_w: int
+    frame_h: int
+    total_frames: int
+
+
 # ============================================================
 # SOTTO-FUNZIONI DI run_pipeline
 # ============================================================
@@ -62,8 +94,7 @@ from postprocessing import (
 def _load_annotations_from_json(review_json, config):
     """Carica annotazioni da JSON. Restituisce (annotations, mode_override)."""
     if not os.path.isfile(review_json):
-        print(f"Errore: file JSON non trovato: {review_json}")
-        sys.exit(1)
+        raise PipelineInputError(f"File JSON non trovato: {review_json}")
 
     print(f"\n[FASE 1/5] Caricamento annotazioni da {Path(review_json).name}...")
     with open(review_json) as f:
@@ -466,16 +497,8 @@ def _save_outputs(
     method,
     mode,
     input_path,
-    output_path,
-    temp_video_path,
-    temp_debug_path,
-    debug_path,
-    report_path,
-    json_path,
-    total_frames,
-    fps,
-    frame_w,
-    frame_h,
+    paths: OutputPaths,
+    meta: VideoMeta,
     enable_debug,
     enable_report,
     ffmpeg_available,
@@ -485,16 +508,16 @@ def _save_outputs(
     """Encoding H.264, salvataggio CSV/JSON, cleanup temp."""
     try:
         if ffmpeg_available:
-            encode_with_audio(temp_video_path, input_path, output_path)
-            if enable_debug and os.path.exists(temp_debug_path):
-                encode_without_audio(temp_debug_path, debug_path)
+            encode_with_audio(paths.temp_video, input_path, paths.output)
+            if enable_debug and os.path.exists(paths.temp_debug):
+                encode_without_audio(paths.temp_debug, paths.debug)
         else:
-            shutil.copy(temp_video_path, output_path)
-            if enable_debug and os.path.exists(temp_debug_path):
-                shutil.copy(temp_debug_path, debug_path)
+            shutil.copy(paths.temp_video, paths.output)
+            if enable_debug and os.path.exists(paths.temp_debug):
+                shutil.copy(paths.temp_debug, paths.debug)
 
         if enable_report:
-            with open(report_path, "w", newline="") as f:
+            with open(paths.report, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
                     fieldnames=[
@@ -519,9 +542,9 @@ def _save_outputs(
                 "tool_version": VERSION,
                 "video": {
                     "filename": Path(input_path).name,
-                    "total_frames": total_frames,
-                    "fps": fps,
-                    "resolution": [frame_w, frame_h],
+                    "total_frames": meta.total_frames,
+                    "fps": meta.fps,
+                    "resolution": [meta.frame_w, meta.frame_h],
                 },
                 "pipeline_config": {
                     "yolo_model": config.yolo_model,
@@ -556,11 +579,11 @@ def _save_outputs(
                 if ann.get("intensities"):
                     frame_data["intensities"] = ann["intensities"]
                 json_annotations["frames"][str(fidx)] = frame_data
-            with open(json_path, "w") as f:
+            with open(paths.json, "w") as f:
                 json.dump(json_annotations, f, indent=2)
 
     finally:
-        for tmp in (temp_video_path, temp_debug_path):
+        for tmp in (paths.temp_video, paths.temp_debug):
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -586,18 +609,16 @@ def run_pipeline(args, config=None):
     review_json = args.review
 
     if args.normalize and not review_json:
-        print("Errore: --normalize richiede --review <json>")
-        sys.exit(1)
+        raise PipelineInputError("--normalize richiede --review <json>")
 
     if not os.path.isfile(input_path):
-        print(f"Errore: file non trovato: {input_path}")
-        sys.exit(1)
+        raise PipelineInputError(f"File non trovato: {input_path}")
 
     ext = Path(input_path).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
-        print(f"Errore: formato non supportato '{ext}'.")
-        print(f"  Formati supportati: {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
-        sys.exit(1)
+        raise PipelineInputError(
+            f"Formato non supportato '{ext}'. Supportati: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
 
     ffmpeg_available = shutil.which("ffmpeg") is not None
     if not ffmpeg_available:
@@ -622,8 +643,7 @@ def run_pipeline(args, config=None):
 
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
-        print(f"Errore: impossibile aprire il video: {input_path}")
-        sys.exit(1)
+        raise PipelineInputError(f"Impossibile aprire il video: {input_path}")
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
@@ -631,8 +651,7 @@ def run_pipeline(args, config=None):
     frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     if total_frames <= 0:
-        print("Errore: impossibile determinare il numero di frame.")
-        sys.exit(1)
+        raise PipelineInputError("Impossibile determinare il numero di frame")
 
     res_label = f"{frame_w}x{frame_h}"
     if frame_h >= 2160:
@@ -733,21 +752,24 @@ def run_pipeline(args, config=None):
     # ============================================
     # FASE 2 — AUTO REFINEMENT LOOP
     # ============================================
-    annotations, actual_refinement_passes, refinement_annotations_added = _run_refinement_loop(
-        input_path,
-        annotations,
-        model,
-        config,
-        fps,
-        frame_w,
-        frame_h,
-        method,
-        fisheye_enabled,
-        undist_map1,
-        undist_map2,
-        report_data,
-        temp_video_path,
-    )
+    if not review_json:
+        annotations, actual_refinement_passes, refinement_annotations_added = _run_refinement_loop(
+            input_path,
+            annotations,
+            model,
+            config,
+            fps,
+            frame_w,
+            frame_h,
+            method,
+            fisheye_enabled,
+            undist_map1,
+            undist_map2,
+            report_data,
+            temp_video_path,
+        )
+    else:
+        actual_refinement_passes, refinement_annotations_added = 0, 0
 
     # ============================================
     # FASE 3 — REVISIONE MANUALE
@@ -793,6 +815,15 @@ def run_pipeline(args, config=None):
     # FASE 5 — POST-PROCESSING
     # ============================================
     print(f"\n[FASE 5/5] Post-processing...")
+    paths = OutputPaths(
+        output=output_path,
+        temp_video=temp_video_path,
+        temp_debug=temp_debug_path,
+        debug=debug_path,
+        report=report_path,
+        json=json_path,
+    )
+    meta = VideoMeta(fps=fps, frame_w=frame_w, frame_h=frame_h, total_frames=total_frames)
     _save_outputs(
         args,
         annotations,
@@ -802,16 +833,8 @@ def run_pipeline(args, config=None):
         method,
         mode,
         input_path,
-        output_path,
-        temp_video_path,
-        temp_debug_path,
-        debug_path,
-        report_path,
-        json_path,
-        total_frames,
-        fps,
-        frame_w,
-        frame_h,
+        paths,
+        meta,
         enable_debug,
         enable_report,
         ffmpeg_available,
@@ -823,13 +846,13 @@ def run_pipeline(args, config=None):
     minutes, seconds = int(total_time // 60), int(total_time % 60)
     print("-" * 40)
     print(f"Completato  —  Tempo totale: {minutes}m {seconds}s")
-    print(f"  Output:       {Path(output_path).name}")
+    print(f"  Output:       {Path(paths.output).name}")
     if enable_debug:
-        print(f"  Debug:        {Path(debug_path).name}")
+        print(f"  Debug:        {Path(paths.debug).name}")
     if enable_report:
-        print(f"  Report:       {Path(report_path).name}")
+        print(f"  Report:       {Path(paths.report).name}")
     if mode == "manual" or args.normalize:
-        print(f"  Annotazioni:  {Path(json_path).name}")
+        print(f"  Annotazioni:  {Path(paths.json).name}")
     print()
 
 
@@ -880,6 +903,12 @@ def main():
     args = parse_args()
     try:
         run_pipeline(args)
+    except PipelineInputError as e:
+        print(f"\nErrore: {e}")
+        sys.exit(1)
+    except PipelineError as e:
+        print(f"\nErrore pipeline: {e}")
+        sys.exit(1)
     except KeyboardInterrupt:
         print("\n\nInterrotto dall'utente (Ctrl+C).")
         sys.exit(1)

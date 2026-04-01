@@ -11,6 +11,8 @@ import numpy as np
 
 from config import PipelineConfig
 
+_log = logging.getLogger(__name__)
+
 
 # ============================================================
 # TRACKING BYTETRACK
@@ -83,8 +85,6 @@ def update_tracker(tracker, nms_boxes, frame_shape):
     -------
     list of (track_id, x1, y1, x2, y2, conf)
     """
-    _log = logging.getLogger(__name__)
-
     if not nms_boxes:
         det = np.empty((0, 6), dtype=np.float32)
     else:

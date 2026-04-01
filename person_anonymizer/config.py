@@ -5,8 +5,11 @@ Contiene la dataclass PipelineConfig con tutti i parametri della pipeline,
 e i valori di default. Sostituisce le 42 variabili globali a livello modulo.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
+import numpy as np
 
 VERSION = "7.1"
 
@@ -35,8 +38,8 @@ class PipelineConfig:
 
     # --- Correzione fish-eye ---
     enable_fisheye_correction: bool = True
-    camera_matrix: object = None
-    dist_coefficients: object = None
+    camera_matrix: np.ndarray | None = None
+    dist_coefficients: np.ndarray | None = None
 
     # --- Frame differencing ---
     enable_motion_detection: bool = False

@@ -67,9 +67,16 @@ def render_video(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     out_writer = cv2.VideoWriter(output_path, fourcc, fps, (frame_w, frame_h))
+    if not out_writer.isOpened():
+        cap.release()
+        raise RuntimeError(f"Impossibile aprire VideoWriter per {output_path}")
     debug_writer = None
     if debug_path:
         debug_writer = cv2.VideoWriter(debug_path, fourcc, fps, (frame_w, frame_h))
+        if not debug_writer.isOpened():
+            cap.release()
+            out_writer.release()
+            raise RuntimeError(f"Impossibile aprire VideoWriter per {debug_path}")
     pbar = tqdm(total=total_frames, desc=desc, unit=" frame")
     frame_idx = 0
 

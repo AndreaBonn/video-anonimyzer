@@ -245,6 +245,46 @@ class TestMergeOverlappingRects:
             assert rx + rw >= x + w
             assert ry + rh >= y + h
 
+    def test_full_overlap_merges_to_one_with_correct_bbox(self):
+        # Arrange — r1:[0,0,10,10] e r2:[5,5,10,10] → bbox unione [0,0,15,15]
+        rects = [(0, 0, 10, 10), (5, 5, 10, 10)]
+
+        # Act
+        result = _merge_overlapping_rects(rects)
+
+        # Assert
+        assert len(result) == 1
+        x, y, w, h = result[0]
+        assert (x, y, w, h) == (0, 0, 15, 15)
+
+    def test_chain_overlap_merges_all_with_correct_bbox(self):
+        # Arrange — A sovrappone B, B sovrappone C: merge transitivo → [0,0,20,10]
+        # A:[0,0,10,10], B:[5,0,10,10], C:[10,0,10,10]
+        rects = [(0, 0, 10, 10), (5, 0, 10, 10), (10, 0, 10, 10)]
+
+        # Act
+        result = _merge_overlapping_rects(rects)
+
+        # Assert
+        assert len(result) == 1
+        x, y, w, h = result[0]
+        assert (x, y, w, h) == (0, 0, 20, 10)
+
+    def test_two_separate_groups(self):
+        # Arrange — gruppo 1: A e B sovrapposti; gruppo 2: C e D sovrapposti
+        rects = [
+            (0, 0, 10, 10),
+            (5, 0, 10, 10),  # gruppo 1
+            (100, 100, 10, 10),
+            (105, 100, 10, 10),  # gruppo 2
+        ]
+
+        # Act
+        result = _merge_overlapping_rects(rects)
+
+        # Assert — due gruppi distinti, non uniti
+        assert len(result) == 2
+
 
 # ============================================================
 # normalize_annotations

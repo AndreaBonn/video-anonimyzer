@@ -111,3 +111,9 @@ desktop.ini
 
 docs/
 doc-progetto/
+
+# Upload e output web (dati GDPR-rilevanti)
+person_anonymizer/web/uploads/*/
+person_anonymizer/web/outputs/*/
+!person_anonymizer/web/uploads/.gitkeep
+!person_anonymizer/web/outputs/.gitkeep

@@ -7,6 +7,7 @@ degli artefatti di pixelazione e la normalizzazione delle annotazioni
 (merge dei poligoni sovrapposti con ricalcolo intensità adattiva).
 """
 
+import logging
 import shutil
 
 import cv2
@@ -17,6 +18,8 @@ from tqdm import tqdm
 from anonymization import compute_adaptive_intensity, polygon_to_bbox
 from config import PipelineConfig
 from detection import apply_nms, compute_iou_boxes, detect_and_rescale
+
+_log = logging.getLogger(__name__)
 
 
 def encode_with_audio(video_no_audio, original_video, output_path):
@@ -46,7 +49,8 @@ def encode_with_audio(video_no_audio, original_video, output_path):
             .overwrite_output()
             .run(quiet=True)
         )
-    except ffmpeg.Error:
+    except ffmpeg.Error as e:
+        _log.warning("ffmpeg con audio fallito, tentativo senza audio: %s", e)
         # Fallback: tenta senza audio
         try:
             video_in = ffmpeg.input(video_no_audio)
@@ -62,7 +66,8 @@ def encode_with_audio(video_no_audio, original_video, output_path):
                 .overwrite_output()
                 .run(quiet=True)
             )
-        except ffmpeg.Error:
+        except ffmpeg.Error as e:
+            _log.warning("ffmpeg completamente fallito, copia grezza AVI: %s", e)
             shutil.copy(video_no_audio, output_path)
 
 
@@ -81,7 +86,9 @@ def encode_without_audio(video_no_audio, output_path):
         shutil.copy(video_no_audio, output_path)
 
 
-def run_post_render_check(anonymized_video_path, model, confidence, report_data, config: PipelineConfig, check_scales=None):
+def run_post_render_check(
+    anonymized_video_path, model, confidence, report_data, config: PipelineConfig, check_scales=None
+):
     """
     Secondo passaggio YOLO sul video oscurato, con multi-scale.
 
@@ -261,7 +268,7 @@ def _merge_rects(r1, r2):
 
 def _merge_overlapping_rects(rects):
     """
-    Merge iterativo di rettangoli sovrapposti.
+    Merge di rettangoli sovrapposti tramite Union-Find.
 
     Parameters
     ----------
@@ -273,26 +280,37 @@ def _merge_overlapping_rects(rects):
     list of tuple
         Rettangoli non sovrapposti dopo il merge.
     """
-    merged = list(rects)
-    changed = True
-    while changed:
-        changed = False
-        new_merged = []
-        used = [False] * len(merged)
-        for i in range(len(merged)):
-            if used[i]:
-                continue
-            current = merged[i]
-            for j in range(i + 1, len(merged)):
-                if used[j]:
-                    continue
-                if _rects_overlap(current, merged[j]):
-                    current = _merge_rects(current, merged[j])
-                    used[j] = True
-                    changed = True
-            new_merged.append(current)
-        merged = new_merged
-    return merged
+    if not rects:
+        return []
+
+    n = len(rects)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i, j):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _rects_overlap(rects[i], rects[j]):
+                union(i, j)
+
+    groups = {}
+    for i in range(n):
+        root = find(i)
+        if root not in groups:
+            groups[root] = rects[i]
+        else:
+            groups[root] = _merge_rects(groups[root], rects[i])
+
+    return list(groups.values())
 
 
 def normalize_annotations(annotations, config: PipelineConfig):
