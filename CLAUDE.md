@@ -11,11 +11,15 @@ e interfaccia web Flask.
   - `person_anonymizer.py` — Pipeline principale e CLI
   - `web/` — Interfaccia web Flask con SSE
 - `tests/` — Test suite (pytest)
+- `reports/` — Report di audit (code roast, security)
+- `docs/` — Documentazione locale (non tracciata in git)
+- `requirements.txt` — Dipendenze pinnate (root del progetto)
+- `pyproject.toml` — Configurazione ruff e pytest
 
 ## Comandi
 ```bash
 # Attiva venv
-source .venv/bin/activate
+source person_anonymizer/.venv/bin/activate
 
 # CLI
 python person_anonymizer/person_anonymizer.py video.mp4
@@ -30,5 +34,5 @@ pytest tests/ -v
 ## Convenzioni
 - Python: snake_case, docstring NumPy
 - Configurazione: tutto in PipelineConfig (config.py), mai globals
-- Dipendenze: requirements.txt con versioni pinnate
+- Dipendenze: requirements.txt alla root con versioni pinnate
 - Test: pytest, pattern AAA, solo funzioni pure (no cv2/YOLO)
