@@ -12,7 +12,6 @@ import pytest
 
 from web.pipeline_runner import validate_config_params, _build_config
 
-
 # ============================================================
 # validate_config_params — input malevoli
 # ============================================================
@@ -85,6 +84,24 @@ class TestValidateConfigRejectsAttacks:
 
         assert valid is False
 
+    def test_rejects_malicious_inference_scales(self):
+        # Lista con valori estremi o tipo errato
+        valid, msg = validate_config_params({"inference_scales": [1.0, "malicious"]})
+
+        assert valid is False
+
+    def test_rejects_invalid_tta_augmentation(self):
+        # Augmentation inesistente
+        valid, msg = validate_config_params({"tta_augmentations": ["exec_payload"]})
+
+        assert valid is False
+
+    def test_rejects_empty_inference_scales(self):
+        # Lista vuota = nessuna scala = pipeline rotta
+        valid, msg = validate_config_params({"inference_scales": []})
+
+        assert valid is False
+
 
 # ============================================================
 # validate_config_params — input validi
@@ -138,9 +155,9 @@ class TestValidateConfigAcceptsValid:
         # Valori ai limiti del range ammesso
         config = {
             "detection_confidence": 0.01,  # minimo
-            "anonymization_intensity": 1,   # minimo
-            "max_refinement_passes": 10,    # massimo
-            "sliding_window_grid": 10,      # massimo
+            "anonymization_intensity": 1,  # minimo
+            "max_refinement_passes": 10,  # massimo
+            "sliding_window_grid": 10,  # massimo
         }
         valid, msg = validate_config_params(config)
 
@@ -179,6 +196,7 @@ class TestBuildConfigIntegration:
 
         # Verifica che sia un PipelineConfig con i default
         from config import PipelineConfig
+
         default = PipelineConfig()
         assert config.detection_confidence == default.detection_confidence
         assert config.operation_mode == default.operation_mode

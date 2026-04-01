@@ -42,6 +42,14 @@ _CONFIG_VALIDATORS = {
     "quality_clahe_clip": lambda v: isinstance(v, (int, float)) and 0.1 <= v <= 10.0,
     "quality_darkness_threshold": lambda v: isinstance(v, int) and 0 <= v <= 255,
     "interpolation_fps_threshold": lambda v: isinstance(v, int) and 1 <= v <= 120,
+    "inference_scales": lambda v: isinstance(v, list)
+    and all(isinstance(s, (int, float)) and 0.5 <= s <= 5.0 for s in v)
+    and 1 <= len(v) <= 10,
+    "tta_augmentations": lambda v: isinstance(v, list)
+    and all(isinstance(a, str) and a in ("flip_h",) for a in v),
+    "quality_clahe_grid": lambda v: isinstance(v, (list, tuple))
+    and len(v) == 2
+    and all(isinstance(x, int) and 1 <= x <= 32 for x in v),
 }
 
 # Campi booleani: accettano solo bool
