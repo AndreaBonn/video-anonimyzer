@@ -410,8 +410,8 @@ def _run_manual_review(
             undist_map1,
             undist_map2,
         )
-        sse_mgr = getattr(args, "_sse_manager")
-        web_job_id = getattr(args, "_job_id")
+        sse_mgr = getattr(args, "_sse_manager", None)
+        web_job_id = getattr(args, "_job_id", None)
         sse_mgr.emit(
             web_job_id,
             "review_ready",
