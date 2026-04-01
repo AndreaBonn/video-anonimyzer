@@ -4,6 +4,8 @@
 
 **Automatic person anonymization in surveillance videos using YOLO v8 multi-scale detection, ByteTrack tracking, and temporal smoothing.**
 
+Created by [Andrea Bonacci](https://andreabonn.github.io/)
+
 [English](#english) | [Italiano](#italiano)
 
 </div>
