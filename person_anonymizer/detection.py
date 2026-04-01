@@ -9,16 +9,24 @@ run_full_detection che orchestra tutte le strategie su un singolo frame.
 import cv2
 import numpy as np
 
-from config import PipelineConfig
+from .config import PipelineConfig
 
-
-# ============================================================
-# RILEVAMENTO MULTI-STRATEGIA
-# ============================================================
+__all__ = [
+    "run_full_detection",
+    "apply_nms",
+    "compute_iou_boxes",
+    "get_window_patches",
+    "detect_and_rescale",
+    "run_multiscale_inference",
+    "run_sliding_window",
+    "patch_intersects_motion",
+]
 
 
 def get_window_patches(frame_w, frame_h, grid, overlap):
     """Genera patch per sliding window."""
+    if grid <= 0:
+        raise ValueError(f"grid deve essere > 0, ricevuto {grid}")
     step_x = int(frame_w / grid * (1 - overlap))
     step_y = int(frame_h / grid * (1 - overlap))
     patch_w = int(frame_w / grid * (1 + overlap))
@@ -145,11 +153,6 @@ def compute_iou_boxes(box_a, box_b):
     area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
-
-
-# ============================================================
-# DETECTION COMPLETA SU UN FRAME
-# ============================================================
 
 
 def run_full_detection(model, frame, conf, frame_w, frame_h, motion_regions, patches, config):

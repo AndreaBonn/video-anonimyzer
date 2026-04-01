@@ -5,14 +5,26 @@ compute_adaptive_intensity, box_to_polygon e polygon_to_bbox
 operano su geometria pura e non richiedono frame reali.
 """
 
+import numpy as np
 import pytest
 
-from anonymization import (
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+
+from person_anonymizer.anonymization import (
     box_to_polygon,
     compute_adaptive_intensity,
     polygon_to_bbox,
+    resolve_intensity,
 )
-from config import PipelineConfig
+from person_anonymizer.config import PipelineConfig
+
+if CV2_AVAILABLE:
+    from person_anonymizer.anonymization import obscure_polygon
 
 
 # ============================================================
@@ -46,9 +58,7 @@ class TestComputeAdaptiveIntensity:
         # risultato = max(7, 3) = 7
 
         # Act
-        result = compute_adaptive_intensity(
-            box_height=30, base_intensity=10, reference_height=80
-        )
+        result = compute_adaptive_intensity(box_height=30, base_intensity=10, reference_height=80)
 
         # Assert
         assert result == 7
@@ -82,9 +92,7 @@ class TestComputeAdaptiveIntensity:
         # min_intensity = max(3, 1//4) = max(3, 0) = 3
 
         # Act
-        result = compute_adaptive_intensity(
-            box_height=1, base_intensity=1, reference_height=80
-        )
+        result = compute_adaptive_intensity(box_height=1, base_intensity=1, reference_height=80)
 
         # Assert
         assert result >= 3
@@ -93,8 +101,7 @@ class TestComputeAdaptiveIntensity:
         # Arrange
         heights = [20, 40, 80, 160]
         results = [
-            compute_adaptive_intensity(h, base_intensity=10, reference_height=80)
-            for h in heights
+            compute_adaptive_intensity(h, base_intensity=10, reference_height=80) for h in heights
         ]
 
         # Assert — l'intensità è non-decrescente all'aumentare dell'altezza
@@ -148,7 +155,10 @@ class TestBoxToPolygon:
 
         # Act
         polygon = box_to_polygon(
-            x1, y1, x2, y2,
+            x1,
+            y1,
+            x2,
+            y2,
             padding=padding,
             frame_w=frame_w,
             frame_h=frame_h,
@@ -171,14 +181,20 @@ class TestBoxToPolygon:
 
         # Act
         polygon_with_edge = box_to_polygon(
-            x1, y1, x2, y2,
+            x1,
+            y1,
+            x2,
+            y2,
             padding=padding,
             frame_w=frame_w,
             frame_h=frame_h,
             config=config,
         )
         polygon_no_edge = box_to_polygon(
-            x1, y1, x2, y2,
+            x1,
+            y1,
+            x2,
+            y2,
             padding=padding,
             frame_w=None,
             frame_h=None,
@@ -279,3 +295,115 @@ class TestPolygonToBbox:
 
         # Assert
         assert bbox == [x1, y1, x2, y2]
+
+    def test_negative_coordinates_clamped(self):
+        """Coordinate negative devono essere clampate a 0."""
+        # Arrange / Act
+        result = box_to_polygon(-10, -5, 50, 50, padding=0, frame_w=100, frame_h=100)
+        # Assert
+        x_coords = [p[0] for p in result]
+        y_coords = [p[1] for p in result]
+        assert min(x_coords) >= 0
+        assert min(y_coords) >= 0
+
+
+# ============================================================
+# obscure_polygon
+# ============================================================
+
+
+@pytest.mark.skipif(not CV2_AVAILABLE, reason="cv2 non disponibile")
+class TestObscurePolygon:
+    """Test per obscure_polygon — funzione core di oscuramento."""
+
+    def test_pixelation_modifies_region(self):
+        # Arrange
+        frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        points = [(10, 10), (50, 10), (50, 50), (10, 50)]
+        original = frame.copy()
+        # Act
+        result = obscure_polygon(frame, points, "pixelation", 10)
+        # Assert — i pixel dentro il poligono devono essere diversi
+        assert not np.array_equal(result[10:50, 10:50], original[10:50, 10:50])
+
+    def test_blur_modifies_region(self):
+        # Arrange
+        frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        points = [(20, 20), (80, 20), (80, 80), (20, 80)]
+        original = frame.copy()
+        # Act
+        result = obscure_polygon(frame, points, "blur", 11)
+        # Assert
+        assert not np.array_equal(result[20:80, 20:80], original[20:80, 20:80])
+
+    def test_returns_same_frame_object(self):
+        # Arrange
+        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
+        points = [(10, 10), (50, 10), (50, 50), (10, 50)]
+        # Act
+        result = obscure_polygon(frame, points, "pixelation", 10)
+        # Assert — modifica in-place, stesso oggetto
+        assert result is frame
+
+    def test_zero_area_polygon_returns_unchanged(self):
+        # Arrange
+        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
+        original = frame.copy()
+        points = [(50, 50), (50, 50), (50, 50)]  # area zero
+        # Act
+        result = obscure_polygon(frame, points, "pixelation", 10)
+        # Assert
+        assert np.array_equal(result, original)
+
+    def test_outside_pixels_unchanged(self):
+        # Arrange
+        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
+        points = [(40, 40), (60, 40), (60, 60), (40, 60)]
+        original = frame.copy()
+        # Act
+        obscure_polygon(frame, points, "pixelation", 10)
+        # Assert — i pixel lontani dal poligono non devono cambiare
+        assert np.array_equal(frame[0:10, 0:10], original[0:10, 0:10])
+        assert np.array_equal(frame[90:100, 90:100], original[90:100, 90:100])
+
+
+# ============================================================
+# resolve_intensity
+# ============================================================
+
+
+class TestResolveIntensity:
+    """Test per resolve_intensity helper."""
+
+    def test_adaptive_enabled(self):
+        # Arrange
+        config = PipelineConfig(
+            enable_adaptive_intensity=True,
+            anonymization_intensity=10,
+            adaptive_reference_height=80,
+        )
+        # Act
+        result = resolve_intensity(config, box_height=80)
+        # Assert — scale_factor = 1.0; min_intensity = max(3, 80//4) = 20 → result = 20
+        assert result == max(3, 80 // 4)
+
+    def test_adaptive_disabled(self):
+        # Arrange
+        config = PipelineConfig(enable_adaptive_intensity=False, anonymization_intensity=15)
+        # Act
+        result = resolve_intensity(config, box_height=200)
+        # Assert
+        assert result == 15
+
+    def test_larger_box_higher_intensity(self):
+        # Arrange
+        config = PipelineConfig(
+            enable_adaptive_intensity=True,
+            anonymization_intensity=10,
+            adaptive_reference_height=80,
+        )
+        # Act
+        small = resolve_intensity(config, box_height=40)
+        large = resolve_intensity(config, box_height=160)
+        # Assert
+        assert large > small

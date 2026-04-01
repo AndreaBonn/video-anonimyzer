@@ -10,7 +10,7 @@ Nessuna dipendenza da cv2, ultralytics o YOLO.
 
 import pytest
 
-from web.pipeline_runner import validate_config_params, _build_config
+from person_anonymizer.web.pipeline_runner import validate_config_params, _build_config
 
 # ============================================================
 # validate_config_params — input malevoli

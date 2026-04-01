@@ -8,12 +8,14 @@ import sys
 import threading
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 from web.sse_manager import SSEManager
 from web.review_state import ReviewState
 from config import PipelineConfig
+from models import PipelineContext
 from person_anonymizer import PipelineError
+
+__all__ = ["PipelineRunner", "validate_config_params"]
 
 _CONFIG_VALIDATORS = {
     "operation_mode": lambda v: isinstance(v, str) and v in ("auto", "manual"),
@@ -177,9 +179,9 @@ class TqdmCapture:
         self._original_tqdm = None
 
     def install(self):
-        """Installa il patch su tqdm (sia nel modulo tqdm che in person_anonymizer)."""
+        """Installa il patch su tqdm (nel modulo tqdm e in pipeline_stages)."""
         import tqdm as tqdm_module
-        import person_anonymizer as pa
+        import pipeline_stages as pa_stages
 
         self._original_tqdm = tqdm_module.tqdm
 
@@ -238,18 +240,18 @@ class TqdmCapture:
                 )
                 super().close()
 
-        # Patcha sia il modulo tqdm che il riferimento in person_anonymizer
+        # Patcha sia il modulo tqdm che il riferimento in pipeline_stages
         tqdm_module.tqdm = PatchedTqdm
-        pa.tqdm = PatchedTqdm
+        pa_stages.tqdm = PatchedTqdm
 
     def uninstall(self):
         """Ripristina tqdm originale."""
         if self._original_tqdm:
             import tqdm as tqdm_module
-            import person_anonymizer as pa
+            import pipeline_stages as pa_stages
 
             tqdm_module.tqdm = self._original_tqdm
-            pa.tqdm = self._original_tqdm
+            pa_stages.tqdm = self._original_tqdm
 
 
 class StdoutCapture:
@@ -361,8 +363,8 @@ class PipelineRunner:
     def _run(self, job_id: str, video_path: str, config_dict: dict, review_json: str | None):
         """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
         import logging
-
         import person_anonymizer as pa
+        from pipeline import run_pipeline
 
         _log = logging.getLogger(__name__)
 
@@ -386,8 +388,19 @@ class PipelineRunner:
         # --- Assicura path assoluto per il modello YOLO ---
         pa_dir = Path(pa.__file__).resolve().parent
         yolo_path = pa_dir / config.yolo_model
-        if yolo_path.exists():
-            config.yolo_model = str(yolo_path)
+        yolo_resolved = yolo_path.resolve()
+        if not str(yolo_resolved).startswith(str(pa_dir.resolve())):
+            self._sse.emit(
+                job_id,
+                "error",
+                {"job_id": job_id, "message": "Percorso modello YOLO non autorizzato"},
+            )
+            self._sse.close(job_id)
+            with self._lock:
+                self._current_job_id = None
+            return
+        if yolo_resolved.exists():
+            config.yolo_model = str(yolo_resolved)
 
         # --- Prepara output dir per questo job ---
         job_output = self._output_dir / job_id
@@ -396,26 +409,26 @@ class PipelineRunner:
         input_stem = Path(video_path).stem
         output_path = str(job_output / f"{input_stem}_anonymized.mp4")
 
-        # --- Costruisci args namespace ---
+        # --- Costruisci contesto pipeline ---
         mode = config.operation_mode
 
-        args = SimpleNamespace(
+        ctx = PipelineContext(
             input=video_path,
             mode=mode,
             method=config_dict.get("anonymization_method"),
+            output=output_path,
             no_debug=not config_dict.get("enable_debug_video", True),
             no_report=not config_dict.get("enable_confidence_report", True),
             review=review_json,
-            output=output_path,
             normalize=config_dict.get("normalize", False),
+            stop_event=self._stop_event,
         )
-        args._stop_event = self._stop_event
 
         # In modalità manual da web, passa lo stato review e il manager SSE
         if mode == "manual":
-            args._review_state = self.review_state
-            args._sse_manager = self._sse
-            args._job_id = job_id
+            ctx.review_state = self.review_state
+            ctx.sse_manager = self._sse
+            ctx.job_id = job_id
 
         # --- Installa cattura ---
         tqdm_capture = TqdmCapture(self._sse, job_id)
@@ -427,7 +440,7 @@ class PipelineRunner:
         self._sse.emit(job_id, "started", {"job_id": job_id})
 
         try:
-            pa.run_pipeline(args, config=config)
+            run_pipeline(ctx, config=config)
 
             # Successo: elenca file di output
             outputs = []

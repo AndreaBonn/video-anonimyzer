@@ -9,14 +9,11 @@ import logging
 
 import numpy as np
 
-from config import PipelineConfig
+from .config import PipelineConfig
+
+__all__ = ["create_tracker", "update_tracker", "TemporalSmoother"]
 
 _log = logging.getLogger(__name__)
-
-
-# ============================================================
-# TRACKING BYTETRACK
-# ============================================================
 
 
 def create_tracker(fps, config: PipelineConfig):
@@ -100,11 +97,6 @@ def update_tracker(tracker, nms_boxes, frame_shape):
     return results
 
 
-# ============================================================
-# TEMPORAL SMOOTHING
-# ============================================================
-
-
 class TemporalSmoother:
     """
     Exponential Moving Average con ghost boxes per occlusioni temporanee.
@@ -116,6 +108,8 @@ class TemporalSmoother:
     """
 
     def __init__(self, alpha, ghost_frames=10, ghost_expansion=1.15):
+        if not (0.0 < alpha <= 1.0):
+            raise ValueError(f"alpha deve essere tra 0 (escl.) e 1.0, ricevuto {alpha}")
         self.alpha = alpha
         self.state = {}
         self.ghost_frames = ghost_frames
@@ -162,7 +156,11 @@ class TemporalSmoother:
         return ghosts
 
     def clear_stale(self, active_ids):
-        """Avvia ghost countdown per track non più attivi."""
+        """Avvia ghost countdown per track non più attivi.
+
+        ATTENZIONE: deve essere chiamato PRIMA di get_ghost_boxes()
+        per ogni frame. Invertire l'ordine produce ghost erronei.
+        """
         for tid in list(self.state):
             if tid not in active_ids and tid not in self.ghost_countdown:
                 self.ghost_countdown[tid] = self.ghost_frames

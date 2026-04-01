@@ -8,6 +8,8 @@ import threading
 
 import cv2
 
+__all__ = ["ReviewState"]
+
 
 class ReviewState:
     """Gestisce lo stato della review manuale tra pipeline thread e Flask."""

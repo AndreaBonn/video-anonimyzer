@@ -9,6 +9,10 @@ import cv2
 import numpy as np
 from copy import deepcopy
 
+from .config import PipelineConfig
+
+__all__ = ["ManualReviewer", "run_manual_review"]
+
 # Key codes OpenCV
 KEY_RIGHT = 83
 KEY_LEFT = 81
@@ -16,6 +20,7 @@ KEY_SPACE = 32
 KEY_ENTER = 13
 KEY_CTRL_Z = 26
 KEY_ESC = 27
+KEY_NONE = 255
 
 
 class ManualReviewer:
@@ -34,11 +39,11 @@ class ManualReviewer:
         self.annotations = deepcopy(auto_annotations)
 
         # Configurazione colori e display
-        self.auto_color = config.get("auto_color", (0, 255, 0))
-        self.manual_color = config.get("manual_color", (0, 120, 255))
-        self.drawing_color = config.get("drawing_color", (255, 255, 0))
-        self.fill_alpha = config.get("fill_alpha", 0.35)
-        self.max_width = config.get("max_width", 1280)
+        self.auto_color = config.review_auto_color
+        self.manual_color = config.review_manual_color
+        self.drawing_color = config.review_drawing_color
+        self.fill_alpha = config.review_fill_alpha
+        self.max_width = config.review_window_max_width
 
         # Video
         self.cap = cv2.VideoCapture(video_path)
@@ -247,7 +252,7 @@ class ManualReviewer:
         help_h = 45
         y_start = self.display_h - help_h
         cv2.rectangle(frame, (0, y_start), (self.display_w, self.display_h), (40, 40, 40), -1)
-        help_line1 = "  <-/-> Naviga  |  Spazio Avanti  |  " "Invio Chiudi poligono  |  Q Esci"
+        help_line1 = "  <-/-> Naviga  |  Spazio Avanti  |  Invio Chiudi poligono  |  Q Esci"
         help_line2 = (
             "  Click Aggiungi punto  |  Ctrl+Z Annulla punto  |  "
             "D Elimina  |  Esc Annulla poligono"
@@ -425,7 +430,7 @@ class ManualReviewer:
 
             key = cv2.waitKey(30) & 0xFF
 
-            if key == 255:
+            if key == KEY_NONE:
                 # Nessun tasto premuto
                 continue
 
@@ -449,8 +454,8 @@ def run_manual_review(
         Percorso del video originale.
     auto_annotations : dict
         Annotazioni dalla pipeline automatica.
-    config : dict
-        Colori, dimensioni finestra, parametri UI.
+    config : PipelineConfig
+        Configurazione della pipeline.
     fisheye_enabled : bool
         Se True, applica undistortion ai frame.
     undist_map1, undist_map2 : ndarray or None

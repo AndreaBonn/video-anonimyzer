@@ -8,11 +8,16 @@ debug visivo, conversione box<->poligono e intensità adattiva.
 import cv2
 import numpy as np
 
-from config import PipelineConfig
+from .config import PipelineConfig
 
-# ============================================================
-# INTENSITÀ ADATTIVA
-# ============================================================
+__all__ = [
+    "compute_adaptive_intensity",
+    "resolve_intensity",
+    "obscure_polygon",
+    "draw_debug_polygons",
+    "box_to_polygon",
+    "polygon_to_bbox",
+]
 
 
 def compute_adaptive_intensity(box_height, base_intensity, reference_height):
@@ -32,13 +37,52 @@ def compute_adaptive_intensity(box_height, base_intensity, reference_height):
     return max(min_intensity, adaptive)
 
 
-# ============================================================
-# OSCURAMENTO
-# ============================================================
+def resolve_intensity(config, box_height):
+    """
+    Restituisce l'intensità di oscuramento in base alla configurazione.
+
+    Parameters
+    ----------
+    config : PipelineConfig
+        Configurazione della pipeline.
+    box_height : float
+        Altezza del bounding box in pixel.
+
+    Returns
+    -------
+    int
+        Intensità di oscuramento calcolata.
+    """
+    if config.enable_adaptive_intensity:
+        return compute_adaptive_intensity(
+            box_height, config.anonymization_intensity, config.adaptive_reference_height
+        )
+    return config.anonymization_intensity
 
 
 def obscure_polygon(frame, points, method, intensity):
-    """Applica oscuramento (pixelation o blur) dentro un poligono."""
+    """
+    Applica oscuramento (pixelation o blur) dentro un poligono.
+
+    Modifica ``frame`` in-place E restituisce il frame modificato.
+    Il valore di ritorno è lo stesso oggetto passato come input.
+
+    Parameters
+    ----------
+    frame : ndarray
+        Frame BGR da oscurare (modificato in-place).
+    points : list
+        Vertici del poligono [(x, y), ...].
+    method : str
+        Metodo di oscuramento: ``"pixelation"`` o ``"blur"``.
+    intensity : int
+        Intensità dell'oscuramento.
+
+    Returns
+    -------
+    ndarray
+        Lo stesso frame passato in input, modificato.
+    """
     pts = np.array(points, dtype=np.int32)
     mask = np.zeros(frame.shape[:2], dtype=np.uint8)
     cv2.fillPoly(mask, [pts], 255)
@@ -68,11 +112,6 @@ def obscure_polygon(frame, points, method, intensity):
         mask_roi[:, :, np.newaxis] == 255, obscured_roi, frame[y : y + h, x : x + w]
     )
     return frame
-
-
-# ============================================================
-# DEBUG VISIVO
-# ============================================================
 
 
 def draw_debug_polygons(frame, auto_polygons, manual_polygons, config: PipelineConfig):
@@ -110,11 +149,6 @@ def draw_debug_polygons(frame, auto_polygons, manual_polygons, config: PipelineC
         overlay, config.review_fill_alpha, debug_frame, 1 - config.review_fill_alpha, 0, debug_frame
     )
     return debug_frame
-
-
-# ============================================================
-# BOX -> POLIGONO
-# ============================================================
 
 
 def box_to_polygon(x1, y1, x2, y2, padding=0, frame_w=None, frame_h=None, config=None):

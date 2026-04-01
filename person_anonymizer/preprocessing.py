@@ -9,9 +9,14 @@ l'interpolazione sub-frame.
 import cv2
 import numpy as np
 
-# ============================================================
-# UTILITÀ PRE-PROCESSING
-# ============================================================
+__all__ = [
+    "build_undistortion_maps",
+    "undistort_frame",
+    "enhance_frame",
+    "MotionDetector",
+    "interpolate_frames",
+    "should_interpolate",
+]
 
 
 def build_undistortion_maps(camera_matrix, dist_coefficients, frame_w, frame_h):
@@ -68,7 +73,10 @@ def enhance_frame(frame, clahe_obj, darkness_threshold):
 
 
 class MotionDetector:
-    """Rileva zone di movimento tramite frame differencing."""
+    """Rileva zone di movimento tramite frame differencing.
+
+    Non thread-safe: usare un'istanza dedicata per thread.
+    """
 
     def __init__(self, threshold, min_area, padding):
         self.prev_gray = None
@@ -81,6 +89,7 @@ class MotionDetector:
         Restituisce lista di (x1, y1, x2, y2) con zone di movimento.
         None al primo frame (analisi completa).
         """
+        fh, fw = frame.shape[:2]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
@@ -103,8 +112,8 @@ class MotionDetector:
                 (
                     max(0, x - self.padding),
                     max(0, y - self.padding),
-                    x + w + self.padding,
-                    y + h + self.padding,
+                    min(fw, x + w + self.padding),
+                    min(fh, y + h + self.padding),
                 )
             )
         return regions

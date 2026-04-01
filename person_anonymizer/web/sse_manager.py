@@ -6,6 +6,8 @@ Supporta più client connessi allo stesso job.
 import threading
 from queue import Queue
 
+__all__ = ["SSEManager"]
+
 _MAX_SUBSCRIBERS_PER_JOB = 5
 
 
@@ -19,7 +21,7 @@ class SSEManager:
 
     def subscribe(self, job_id: str) -> Queue:
         """Sottoscrive un client agli eventi di un job. Restituisce la coda."""
-        q = Queue()
+        q = Queue(maxsize=200)
         with self._lock:
             subs = self._subscribers.setdefault(job_id, [])
             if len(subs) >= _MAX_SUBSCRIBERS_PER_JOB:
@@ -43,11 +45,17 @@ class SSEManager:
         event = {"type": event_type, "data": data}
         with self._lock:
             for q in self._subscribers.get(job_id, []):
-                q.put(event)
+                try:
+                    q.put_nowait(event)
+                except Exception:
+                    pass  # Drop event se coda piena (client lento)
 
     def close(self, job_id: str):
         """Chiude tutte le code di un job (segnale di fine stream)."""
         with self._lock:
             for q in self._subscribers.get(job_id, []):
-                q.put(None)
+                try:
+                    q.put(None, timeout=1)
+                except Exception:
+                    pass
             self._subscribers.pop(job_id, None)

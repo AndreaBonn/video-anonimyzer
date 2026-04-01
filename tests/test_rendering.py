@@ -11,8 +11,8 @@ import cv2
 import numpy as np
 import pytest
 
-from rendering import render_video, compute_review_stats
-from config import PipelineConfig
+from person_anonymizer.rendering import render_video, compute_review_stats
+from person_anonymizer.config import PipelineConfig
 
 
 class TestComputeReviewStats:
@@ -67,7 +67,10 @@ class TestComputeReviewStats:
         }
         reviewed = {
             0: {"auto": [], "manual": []},  # rimosso 1
-            1: {"auto": [[(5, 5), (15, 5), (15, 15)]], "manual": [[(20, 20), (30, 20), (30, 30)]]},  # aggiunti 2
+            1: {
+                "auto": [[(5, 5), (15, 5), (15, 15)]],
+                "manual": [[(20, 20), (30, 20), (30, 30)]],
+            },  # aggiunti 2
         }
 
         # Act
@@ -120,9 +123,17 @@ class TestRenderVideo:
 
             # Act
             render_video(
-                input_path, output_path, annotations,
-                25.0, 20, 20, "pixelation",
-                False, None, None, config,
+                input_path,
+                output_path,
+                annotations,
+                25.0,
+                20,
+                20,
+                "pixelation",
+                False,
+                None,
+                None,
+                config,
             )
 
             # Assert
@@ -158,9 +169,17 @@ class TestRenderVideo:
 
             # Act
             render_video(
-                input_path, output_path, annotations,
-                25.0, 20, 20, "pixelation",
-                False, None, None, config,
+                input_path,
+                output_path,
+                annotations,
+                25.0,
+                20,
+                20,
+                "pixelation",
+                False,
+                None,
+                None,
+                config,
             )
 
             # Assert — il frame di output non deve essere identico all'input
@@ -179,15 +198,27 @@ class TestRenderVideo:
             debug_path = os.path.join(tmpdir, "debug.avi")
             self._create_test_video(input_path, num_frames=2)
             annotations = {
-                0: {"auto": [[(0, 0), (10, 0), (10, 10), (0, 10)]], "manual": [], "intensities": [10]},
+                0: {
+                    "auto": [[(0, 0), (10, 0), (10, 10), (0, 10)]],
+                    "manual": [],
+                    "intensities": [10],
+                },
                 1: {"auto": [], "manual": [], "intensities": []},
             }
 
             # Act
             render_video(
-                input_path, output_path, annotations,
-                25.0, 20, 20, "pixelation",
-                False, None, None, config,
+                input_path,
+                output_path,
+                annotations,
+                25.0,
+                20,
+                20,
+                "pixelation",
+                False,
+                None,
+                None,
+                config,
                 debug_path=debug_path,
             )
 

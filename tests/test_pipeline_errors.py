@@ -7,7 +7,7 @@ definite e utilizzabili come eccezioni standard Python.
 
 import pytest
 
-from person_anonymizer import PipelineError, PipelineInputError
+from person_anonymizer.models import PipelineError, PipelineInputError
 
 
 class TestPipelineExceptions:

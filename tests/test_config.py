@@ -7,7 +7,7 @@ senza alcuna dipendenza da cv2, ultralytics o modelli pesanti.
 
 import pytest
 
-from config import PipelineConfig, SUPPORTED_EXTENSIONS, VERSION
+from person_anonymizer.config import PipelineConfig, SUPPORTED_EXTENSIONS, VERSION
 
 
 class TestPipelineConfigInvariants:
@@ -186,3 +186,55 @@ class TestVersion:
 
     def test_version_is_not_empty(self):
         assert len(VERSION) > 0
+
+
+class TestPipelineConfigValidation:
+    """Test per la validazione __post_init__ di PipelineConfig."""
+
+    def test_invalid_detection_confidence_raises(self):
+        with pytest.raises(ValueError, match="detection_confidence"):
+            PipelineConfig(detection_confidence=1.5)
+
+    def test_invalid_detection_confidence_negative(self):
+        with pytest.raises(ValueError, match="detection_confidence"):
+            PipelineConfig(detection_confidence=-0.1)
+
+    def test_invalid_anonymization_intensity_zero(self):
+        with pytest.raises(ValueError, match="anonymization_intensity"):
+            PipelineConfig(anonymization_intensity=0)
+
+    def test_invalid_anonymization_intensity_over_100(self):
+        with pytest.raises(ValueError, match="anonymization_intensity"):
+            PipelineConfig(anonymization_intensity=101)
+
+    def test_invalid_operation_mode(self):
+        with pytest.raises(ValueError, match="operation_mode"):
+            PipelineConfig(operation_mode="automatic")
+
+    def test_invalid_anonymization_method(self):
+        with pytest.raises(ValueError, match="anonymization_method"):
+            PipelineConfig(anonymization_method="mosaic")
+
+    def test_invalid_smoothing_alpha_zero(self):
+        with pytest.raises(ValueError, match="smoothing_alpha"):
+            PipelineConfig(smoothing_alpha=0.0)
+
+    def test_invalid_ghost_frames_negative(self):
+        with pytest.raises(ValueError, match="ghost_frames"):
+            PipelineConfig(ghost_frames=-1)
+
+    def test_empty_inference_scales(self):
+        with pytest.raises(ValueError, match="inference_scales"):
+            PipelineConfig(inference_scales=[])
+
+    def test_valid_boundary_values_accepted(self):
+        # Arrange / Act — non deve lanciare eccezioni
+        config = PipelineConfig(
+            detection_confidence=0.01,
+            anonymization_intensity=1,
+            smoothing_alpha=1.0,
+            ghost_frames=0,
+            max_refinement_passes=1,
+        )
+        # Assert
+        assert config.detection_confidence == 0.01

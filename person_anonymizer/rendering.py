@@ -6,12 +6,18 @@ del video originale e produrre il file di output (con video debug opzionale),
 oltre alla funzione di confronto statistico pre/post review manuale.
 """
 
+import logging
+
 import cv2
 from tqdm import tqdm
 
-from anonymization import draw_debug_polygons, obscure_polygon
-from config import PipelineConfig
-from preprocessing import undistort_frame
+from .anonymization import draw_debug_polygons, obscure_polygon
+from .config import PipelineConfig
+from .preprocessing import undistort_frame
+
+_log = logging.getLogger(__name__)
+
+__all__ = ["render_video", "compute_review_stats"]
 
 
 def render_video(
@@ -79,69 +85,68 @@ def render_video(
             out_writer.release()
             raise RuntimeError(f"Impossibile aprire VideoWriter per {debug_path}")
     corrupted_frames = 0
-    pbar = tqdm(total=total_frames, desc=desc, unit=" frame")
     frame_idx = 0
 
-    while True:
-        if stop_event is not None and stop_event.is_set():
-            break
+    try:
+        pbar = tqdm(total=total_frames, desc=desc, unit=" frame")
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                break
 
-        ret, frame = cap.read()
-        if not ret:
-            if frame_idx < total_frames - 1:
-                corrupted_frames += 1
-                frame_idx += 1
-                pbar.update(1)
-                continue
-            break
+            ret, frame = cap.read()
+            if not ret:
+                if frame_idx < total_frames - 1:
+                    corrupted_frames += 1
+                    frame_idx += 1
+                    pbar.update(1)
+                    continue
+                break
 
-        if fisheye_enabled:
-            frame = undistort_frame(frame, undist_map1, undist_map2)
+            if fisheye_enabled:
+                frame = undistort_frame(frame, undist_map1, undist_map2)
 
-        render_frame = frame.copy()
-        ann = annotations.get(frame_idx, {"auto": [], "manual": [], "intensities": []})
+            render_frame = frame.copy()
+            ann = annotations.get(frame_idx, {"auto": [], "manual": [], "intensities": []})
 
-        auto_polys = ann.get("auto", [])
-        manual_polys = ann.get("manual", [])
-        intensities = ann.get("intensities", [])
+            auto_polys = ann.get("auto", [])
+            manual_polys = ann.get("manual", [])
+            intensities = ann.get("intensities", [])
 
-        for i, poly in enumerate(auto_polys):
-            if config.enable_adaptive_intensity and i < len(intensities):
-                intensity = intensities[i]
-            else:
+            for i, poly in enumerate(auto_polys):
+                if config.enable_adaptive_intensity and i < len(intensities):
+                    intensity = intensities[i]
+                else:
+                    intensity = config.anonymization_intensity
+                if method == "blur" and intensity % 2 == 0:
+                    intensity += 1
+                render_frame = obscure_polygon(render_frame, poly, method, intensity)
+
+            for poly in manual_polys:
                 intensity = config.anonymization_intensity
-            if method == "blur" and intensity % 2 == 0:
-                intensity += 1
-            render_frame = obscure_polygon(render_frame, poly, method, intensity)
+                if method == "blur" and intensity % 2 == 0:
+                    intensity += 1
+                render_frame = obscure_polygon(render_frame, poly, method, intensity)
 
-        for poly in manual_polys:
-            intensity = config.anonymization_intensity
-            if method == "blur" and intensity % 2 == 0:
-                intensity += 1
-            render_frame = obscure_polygon(render_frame, poly, method, intensity)
+            out_writer.write(render_frame)
 
-        out_writer.write(render_frame)
+            if debug_writer:
+                debug_frame = draw_debug_polygons(frame, auto_polys, manual_polys, config)
+                debug_writer.write(debug_frame)
 
+            frame_idx += 1
+            pbar.update(1)
+        pbar.close()
+        if corrupted_frames > 0:
+            _log.warning(
+                "Rendering: %d frame corrotti saltati su %d totali",
+                corrupted_frames,
+                total_frames,
+            )
+    finally:
+        cap.release()
+        out_writer.release()
         if debug_writer:
-            debug_frame = draw_debug_polygons(frame, auto_polys, manual_polys, config)
-            debug_writer.write(debug_frame)
-
-        frame_idx += 1
-        pbar.update(1)
-
-    pbar.close()
-    if corrupted_frames > 0:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "Rendering: %d frame corrotti saltati su %d totali",
-            corrupted_frames,
-            total_frames,
-        )
-    cap.release()
-    out_writer.release()
-    if debug_writer:
-        debug_writer.release()
+            debug_writer.release()
 
 
 def compute_review_stats(original, reviewed, total_frames):

@@ -10,7 +10,7 @@ import io
 import pytest
 
 # conftest aggiunge person_anonymizer/ al path
-from web.app import app
+from person_anonymizer.web.app import app
 
 
 @pytest.fixture

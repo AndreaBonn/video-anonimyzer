@@ -11,7 +11,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-VERSION = "7.1"
+__all__ = ["VERSION", "SUPPORTED_EXTENSIONS", "PipelineConfig"]
+
+VERSION = "7.1.0"
 
 SUPPORTED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"}
 
@@ -53,12 +55,12 @@ class PipelineConfig:
     sliding_window_overlap: float = 0.3
 
     # --- Multi-scale + TTA ---
-    inference_scales: list = field(default_factory=lambda: [1.0, 1.5, 2.0, 2.5])
-    tta_augmentations: list = field(default_factory=lambda: ["flip_h"])
+    inference_scales: list[float] = field(default_factory=lambda: [1.0, 1.5, 2.0, 2.5])
+    tta_augmentations: list[str] = field(default_factory=lambda: ["flip_h"])
 
     # --- Miglioramento qualità ---
     quality_clahe_clip: float = 2.0
-    quality_clahe_grid: tuple = (8, 8)
+    quality_clahe_grid: tuple[int, int] = (8, 8)
     quality_darkness_threshold: int = 60
 
     # --- Tracking ---
@@ -87,12 +89,67 @@ class PipelineConfig:
     refinement_overlap_threshold: float = 0.5
 
     # --- Revisione manuale (colori BGR) ---
-    review_auto_color: tuple = (0, 255, 0)
-    review_manual_color: tuple = (0, 120, 255)
-    review_drawing_color: tuple = (255, 255, 0)
+    review_auto_color: tuple[int, int, int] = (0, 255, 0)
+    review_manual_color: tuple[int, int, int] = (0, 120, 255)
+    review_drawing_color: tuple[int, int, int] = (255, 255, 0)
     review_fill_alpha: float = 0.35
     review_window_max_width: int = 1280
 
     # --- Output e debug ---
     enable_debug_video: bool = True
     enable_confidence_report: bool = True
+
+    def __post_init__(self):
+        """Valida i parametri di configurazione."""
+        if not (0.01 <= self.detection_confidence <= 0.99):
+            raise ValueError(
+                f"detection_confidence deve essere tra 0.01 e 0.99, ricevuto {self.detection_confidence}"
+            )
+        if not (1 <= self.anonymization_intensity <= 100):
+            raise ValueError(
+                f"anonymization_intensity deve essere tra 1 e 100, ricevuto {self.anonymization_intensity}"
+            )
+        if self.person_padding < 0 or self.person_padding > 200:
+            raise ValueError(
+                f"person_padding deve essere tra 0 e 200, ricevuto {self.person_padding}"
+            )
+        if not (0.0 < self.nms_iou_internal < 1.0):
+            raise ValueError(
+                f"nms_iou_internal deve essere tra 0 e 1 (escl.), ricevuto {self.nms_iou_internal}"
+            )
+        if not (0.0 < self.nms_iou_threshold < 1.0):
+            raise ValueError(
+                f"nms_iou_threshold deve essere tra 0 e 1 (escl.), ricevuto {self.nms_iou_threshold}"
+            )
+        if self.operation_mode not in ("manual", "auto"):
+            raise ValueError(
+                f"operation_mode deve essere 'manual' o 'auto', ricevuto '{self.operation_mode}'"
+            )
+        if self.anonymization_method not in ("pixelation", "blur"):
+            raise ValueError(
+                f"anonymization_method deve essere 'pixelation' o 'blur', ricevuto '{self.anonymization_method}'"
+            )
+        if not (0.0 < self.smoothing_alpha <= 1.0):
+            raise ValueError(
+                f"smoothing_alpha deve essere tra 0 (escl.) e 1, ricevuto {self.smoothing_alpha}"
+            )
+        if self.ghost_frames < 0 or self.ghost_frames > 120:
+            raise ValueError(f"ghost_frames deve essere tra 0 e 120, ricevuto {self.ghost_frames}")
+        if not (1.0 <= self.ghost_expansion <= 2.0):
+            raise ValueError(
+                f"ghost_expansion deve essere tra 1.0 e 2.0, ricevuto {self.ghost_expansion}"
+            )
+        if not (1 <= self.max_refinement_passes <= 10):
+            raise ValueError(
+                f"max_refinement_passes deve essere tra 1 e 10, ricevuto {self.max_refinement_passes}"
+            )
+        if self.sliding_window_grid < 1 or self.sliding_window_grid > 10:
+            raise ValueError(
+                f"sliding_window_grid deve essere tra 1 e 10, ricevuto {self.sliding_window_grid}"
+            )
+        if not self.inference_scales:
+            raise ValueError("inference_scales non può essere vuota")
+        if self.adaptive_reference_height < 1:
+            raise ValueError(
+                f"adaptive_reference_height deve essere >= 1, ricevuto {self.adaptive_reference_height}"
+            )

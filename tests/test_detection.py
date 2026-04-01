@@ -9,18 +9,19 @@ import pytest
 
 try:
     import cv2 as _cv2
+
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
 
-from detection import (
+from person_anonymizer.detection import (
     compute_iou_boxes,
     get_window_patches,
     patch_intersects_motion,
 )
 
 if CV2_AVAILABLE:
-    from detection import apply_nms
+    from person_anonymizer.detection import apply_nms
 
 
 # ============================================================
@@ -98,6 +99,16 @@ class TestComputeIouBoxes:
 
         # Assert — IoU è simmetrica
         assert iou_ab == pytest.approx(iou_ba)
+
+    def test_zero_area_box(self):
+        """Box con area zero (x1 == x2) non deve causare ZeroDivisionError."""
+        # Arrange
+        box_a = [10, 10, 10, 20]  # larghezza zero
+        box_b = [5, 5, 15, 25]
+        # Act
+        result = compute_iou_boxes(box_a, box_b)
+        # Assert
+        assert result == 0.0
 
 
 # ============================================================
@@ -268,7 +279,7 @@ class TestPatchIntersectsMotion:
         # Arrange — due regioni, solo la seconda interseca
         motion_regions = [
             (200, 200, 300, 300),  # distante
-            (10, 10, 40, 40),      # interseca la patch [0,0,50,50]
+            (10, 10, 40, 40),  # interseca la patch [0,0,50,50]
         ]
 
         # Act

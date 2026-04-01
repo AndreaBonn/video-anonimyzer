@@ -7,7 +7,7 @@ usa solo numpy internamente.
 
 import pytest
 
-from tracking import TemporalSmoother
+from person_anonymizer.tracking import TemporalSmoother
 
 # ============================================================
 # TemporalSmoother.smooth

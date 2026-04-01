@@ -15,9 +15,17 @@ import ffmpeg
 import numpy as np
 from tqdm import tqdm
 
-from anonymization import compute_adaptive_intensity, polygon_to_bbox
-from config import PipelineConfig
-from detection import apply_nms, compute_iou_boxes, detect_and_rescale
+from .anonymization import compute_adaptive_intensity, polygon_to_bbox
+from .config import PipelineConfig
+from .detection import apply_nms, compute_iou_boxes, detect_and_rescale
+
+__all__ = [
+    "encode_with_audio",
+    "encode_without_audio",
+    "run_post_render_check",
+    "filter_artifact_detections",
+    "normalize_annotations",
+]
 
 _log = logging.getLogger(__name__)
 
@@ -82,7 +90,8 @@ def encode_without_audio(video_no_audio, output_path):
             .overwrite_output()
             .run(quiet=True)
         )
-    except ffmpeg.Error:
+    except ffmpeg.Error as e:
+        _log.warning("ffmpeg fallito per debug video, copia grezza AVI: %s", e)
         shutil.copy(video_no_audio, output_path)
 
 
@@ -126,38 +135,39 @@ def run_post_render_check(
     alert_frames = []
     frame_idx = 0
 
-    pbar = tqdm(total=total, desc="Verifica", unit=" frame")
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        pbar = tqdm(total=total, desc="Verifica", unit=" frame")
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        all_boxes = []
-        for scale in check_scales:
-            if scale == 1.0:
-                results = model(frame, conf=confidence, classes=[0], verbose=False)
-                for box in results[0].boxes:
-                    x1, y1, x2, y2 = map(float, box.xyxy[0])
-                    all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
-            else:
-                new_w = int(frame_w * scale)
-                new_h = int(frame_h * scale)
-                scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-                boxes = detect_and_rescale(model, scaled, confidence, scale)
-                all_boxes.extend(boxes)
+            all_boxes = []
+            for scale in check_scales:
+                if scale == 1.0:
+                    results = model(frame, conf=confidence, classes=[0], verbose=False)
+                    for box in results[0].boxes:
+                        x1, y1, x2, y2 = map(float, box.xyxy[0])
+                        all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
+                else:
+                    new_w = int(frame_w * scale)
+                    new_h = int(frame_h * scale)
+                    scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+                    boxes = detect_and_rescale(model, scaled, confidence, scale)
+                    all_boxes.extend(boxes)
 
-        nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
+            nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
 
-        if len(nms_boxes) > 0:
-            alert_frames.append((frame_idx, len(nms_boxes), nms_boxes))
-            if frame_idx in report_data:
-                report_data[frame_idx]["post_check_alerts"] = len(nms_boxes)
+            if len(nms_boxes) > 0:
+                alert_frames.append((frame_idx, len(nms_boxes), nms_boxes))
+                if frame_idx in report_data:
+                    report_data[frame_idx]["post_check_alerts"] = len(nms_boxes)
 
-        frame_idx += 1
-        pbar.update(1)
-    pbar.close()
-
-    cap.release()
+            frame_idx += 1
+            pbar.update(1)
+        pbar.close()
+    finally:
+        cap.release()
     return alert_frames
 
 
@@ -284,6 +294,10 @@ def _merge_overlapping_rects(rects):
         return []
 
     n = len(rects)
+    if n > 100:
+        _log.warning(
+            "_merge_overlapping_rects: %d rects, performance O(n²) potenzialmente lenta", n
+        )
     parent = list(range(n))
 
     def find(i):

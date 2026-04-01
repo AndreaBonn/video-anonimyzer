@@ -1,6 +1,6 @@
 [project]
 name = "person-anonymizer"
-version = "7.1"
+version = "7.1.0"
 description = "Tool di anonimizzazione persone in video di sorveglianza"
 requires-python = ">=3.10"
 
@@ -13,4 +13,4 @@ select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["person_anonymizer"]
+pythonpath = ["."]

@@ -8,8 +8,8 @@ sono testate in isolamento tramite import diretto.
 
 import pytest
 
-from config import PipelineConfig
-from postprocessing import (
+from person_anonymizer.config import PipelineConfig
+from person_anonymizer.postprocessing import (
     _merge_overlapping_rects,
     _merge_rects,
     _rects_overlap,

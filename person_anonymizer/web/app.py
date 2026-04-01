@@ -3,10 +3,14 @@ Flask web app per Person Anonymizer.
 Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
+import os
 import re
 import sys
 import uuid
 import json
+import shutil
+import threading
+import time as _time
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, Response, send_file, stream_with_context
@@ -23,15 +27,47 @@ from web.sse_manager import SSEManager
 from web.pipeline_runner import PipelineRunner
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024 * 1024  # 10 GB max upload
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB max upload
 app.config.setdefault("RATELIMIT_ENABLED", True)
 
-limiter = Limiter(app=app, key_func=get_remote_address, default_limits=[])
+limiter = Limiter(app=app, key_func=get_remote_address, storage_uri="memory://", default_limits=[])
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+def _cleanup_old_jobs(max_age_seconds=3600):
+    """Rimuove job directory più vecchie di max_age_seconds."""
+    now = _time.time()
+    for base_dir in (UPLOAD_DIR, OUTPUT_DIR):
+        if not base_dir.exists():
+            continue
+        for job_dir in base_dir.iterdir():
+            if job_dir.is_dir():
+                try:
+                    age = now - job_dir.stat().st_mtime
+                    if age > max_age_seconds:
+                        shutil.rmtree(job_dir, ignore_errors=True)
+                except OSError:
+                    pass
+
+
+def _start_cleanup_thread(interval=600):
+    """Avvia thread daemon per pulizia periodica."""
+
+    def _loop():
+        while True:
+            _cleanup_old_jobs()
+            _time.sleep(interval)
+
+    t = threading.Thread(target=_loop, daemon=True, name="cleanup")
+    t.start()
+
+
+_start_cleanup_thread()
 
 sse_manager = SSEManager()
 pipeline_runner = PipelineRunner(sse_manager, OUTPUT_DIR)
@@ -48,17 +84,39 @@ def internal_error(e):
 
 @app.errorhandler(413)
 def request_entity_too_large(e):
-    return jsonify({"error": "File troppo grande", "max_mb": 10240}), 413
+    return jsonify({"error": "File troppo grande", "max_mb": 2048}), 413
 
 
 # ---------- Helper sicurezza ----------
 
 
-def validate_job_id(job_id: str) -> bool:
+def validate_job_id(job_id: str | None) -> bool:
     """Verifica che job_id sia un hex di 12 caratteri minuscoli."""
     if not job_id or len(job_id) != 12:
         return False
     return bool(re.match(r"^[a-f0-9]{12}$", job_id))
+
+
+@app.before_request
+def add_request_id():
+    import uuid as _uuid
+
+    request.request_id = _uuid.uuid4().hex[:16]
+
+
+@app.before_request
+def csrf_check():
+    """Verifica CSRF per richieste mutation via header X-Requested-With."""
+    if request.method in ("POST", "PUT", "DELETE"):
+        # Le richieste multipart (upload file) e JSON (API) da fetch
+        # devono includere X-Requested-With che i browser non inviano cross-origin
+        if request.endpoint and request.endpoint not in ("static",):
+            if not request.headers.get("X-Requested-With"):
+                origin = request.headers.get("Origin", "")
+                host = request.headers.get("Host", "")
+                # Permetti richieste same-origin (no Origin header) o con Origin che matcha Host
+                if origin and not origin.endswith(f"://{host}"):
+                    return jsonify({"error": "CSRF check failed"}), 403
 
 
 @app.after_request
@@ -69,6 +127,7 @@ def add_security_headers(response):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
+        "script-src 'self'; "
         "style-src 'self' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
@@ -76,6 +135,7 @@ def add_security_headers(response):
     )
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["X-Request-ID"] = getattr(request, "request_id", "unknown")
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = (
             "max-age=63072000; includeSubDomains; preload"
@@ -160,6 +220,20 @@ def upload_json():
     dest = job_dir / safe_name
     f.save(str(dest))
 
+    # Valida contenuto JSON
+    try:
+        content = dest.read_text(encoding="utf-8")
+        if len(content) > 100 * 1024 * 1024:  # max 100 MB
+            dest.unlink(missing_ok=True)
+            return jsonify({"error": "File JSON troppo grande (max 100 MB)"}), 400
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            dest.unlink(missing_ok=True)
+            return jsonify({"error": "Il JSON deve essere un oggetto"}), 400
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        dest.unlink(missing_ok=True)
+        return jsonify({"error": f"JSON non valido: {e}"}), 400
+
     return jsonify({"filename": safe_name})
 
 
@@ -227,6 +301,10 @@ def progress_stream():
 
     def generate():
         import queue as q_module
+        import time as _time
+
+        max_duration = 7200  # 2 ore max
+        start = _time.monotonic()
 
         try:
             q = sse_manager.subscribe(job_id)
@@ -239,6 +317,9 @@ def progress_stream():
                     event = q.get(timeout=60)
                 except q_module.Empty:
                     yield ": heartbeat\n\n"
+                    if _time.monotonic() - start > max_duration:
+                        yield 'event: timeout\ndata: {"message": "Connessione SSE scaduta dopo 2h"}\n\n'
+                        break
                     continue
                 if event is None:
                     break
@@ -260,6 +341,7 @@ def progress_stream():
 
 
 @app.route("/api/stop", methods=["POST"])
+@limiter.limit("10 per minute")
 def stop_pipeline():
     data = request.get_json() or {}
     job_id = data.get("job_id")
@@ -275,6 +357,7 @@ def stop_pipeline():
 
 
 @app.route("/api/status")
+@limiter.limit("60 per minute")
 def status():
     return jsonify(pipeline_runner.get_status())
 
@@ -283,6 +366,7 @@ def status():
 
 
 @app.route("/api/review/status")
+@limiter.limit("60 per minute")
 def review_status():
     rs = pipeline_runner.review_state
     if not rs.is_active:
@@ -342,6 +426,8 @@ def _validate_annotation_frame(data: dict) -> tuple[bool, str]:
                 x, y = pt
                 if not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
                     return False, "Coordinate devono essere numeriche"
+                if not (-10000 <= x <= 10000 and -10000 <= y <= 10000):
+                    return False, "Coordinate fuori range ammesso"
     return True, ""
 
 
@@ -351,6 +437,9 @@ def review_update_annotations(frame_idx):
     rs = pipeline_runner.review_state
     if not rs.is_active:
         return jsonify({"error": "Nessuna review attiva"}), 404
+    meta = rs.get_metadata()
+    if not (0 <= frame_idx < meta["total_frames"]):
+        return jsonify({"error": "frame_idx fuori range"}), 400
     data = request.get_json()
     if not data:
         return jsonify({"error": "Payload JSON mancante"}), 400
@@ -459,6 +548,15 @@ def list_outputs(job_id):
 # ---------- Main ----------
 
 if __name__ == "__main__":
+    import warnings
+
+    warnings.warn(
+        "Server di sviluppo Werkzeug in uso. Per produzione usa: "
+        "gunicorn -w 1 --threads 4 -b 127.0.0.1:5000 'person_anonymizer.web.app:app'",
+        stacklevel=1,
+    )
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("FLASK_PORT", "5000"))
     print(f"\n  Person Anonymizer Web GUI")
-    print(f"  Apri http://127.0.0.1:5000 nel browser\n")
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    print(f"  Apri http://{host}:{port} nel browser\n")
+    app.run(host=host, port=port, debug=False, threaded=True)

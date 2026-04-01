@@ -13,11 +13,16 @@ da diverse angolazioni con la stessa camera usata per la sorveglianza.
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+__all__ = ["find_chessboard_corners", "calibrate_camera"]
+
+_log = logging.getLogger(__name__)
 
 
 def find_chessboard_corners(image_paths, board_size=(9, 6)):
@@ -47,7 +52,7 @@ def find_chessboard_corners(image_paths, board_size=(9, 6)):
     for path in image_paths:
         img = cv2.imread(path)
         if img is None:
-            print(f"  ATTENZIONE: impossibile leggere {path}, saltato.")
+            _log.warning("Impossibile leggere %s, saltato", path)
             continue
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -59,9 +64,9 @@ def find_chessboard_corners(image_paths, board_size=(9, 6)):
             corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
             obj_points.append(objp)
             img_points.append(corners)
-            print(f"  OK: {Path(path).name}")
+            _log.info("  OK: %s", Path(path).name)
         else:
-            print(f"  SKIP: scacchiera non trovata in {Path(path).name}")
+            _log.info("  SKIP: scacchiera non trovata in %s", Path(path).name)
 
     return obj_points, img_points, image_size
 
@@ -93,8 +98,7 @@ def main():
     args = parser.parse_args()
 
     if not Path(args.images).is_dir():
-        print(f"Errore: cartella non trovata: {args.images}")
-        sys.exit(1)
+        raise FileNotFoundError(f"Cartella non trovata: {args.images}")
 
     extensions = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tiff")
     image_paths = []
@@ -102,11 +106,10 @@ def main():
         image_paths.extend(list(Path(args.images).glob(ext)))
 
     if not image_paths:
-        print(f"Errore: nessuna immagine trovata in {args.images}")
-        sys.exit(1)
+        raise FileNotFoundError(f"Nessuna immagine trovata in {args.images}")
 
     image_paths.sort()
-    print(f"\nCalibrazione camera")
+    print("\nCalibrazione camera")
     print(f"  Immagini trovate: {len(image_paths)}")
     print(f"  Scacchiera: {args.board_cols}x{args.board_rows}")
     print()
@@ -115,8 +118,7 @@ def main():
     obj_points, img_points, image_size = find_chessboard_corners(image_paths, board_size)
 
     if len(obj_points) < 3:
-        print(f"\nErrore: servono almeno 3 immagini valide, " f"trovate solo {len(obj_points)}.")
-        sys.exit(1)
+        raise ValueError(f"Servono almeno 3 immagini valide, trovate solo {len(obj_points)}")
 
     print(f"\nImmagini valide: {len(obj_points)} / {len(image_paths)}")
     print("Calibrazione in corso...")
@@ -136,4 +138,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"\nErrore: {e}")
+        sys.exit(1)
