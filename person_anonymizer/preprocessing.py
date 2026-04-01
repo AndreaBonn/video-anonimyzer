@@ -9,9 +9,8 @@ l'interpolazione sub-frame.
 import cv2
 import numpy as np
 
-
 # ============================================================
-# UTILITA' PRE-PROCESSING
+# UTILITÀ PRE-PROCESSING
 # ============================================================
 
 

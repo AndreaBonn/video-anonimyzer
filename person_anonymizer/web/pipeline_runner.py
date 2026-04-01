@@ -14,6 +14,74 @@ from web.sse_manager import SSEManager
 from web.review_state import ReviewState
 from config import PipelineConfig
 
+_CONFIG_VALIDATORS = {
+    "operation_mode": lambda v: isinstance(v, str) and v in ("auto", "manual"),
+    "anonymization_method": lambda v: isinstance(v, str) and v in ("pixelation", "blur"),
+    "anonymization_intensity": lambda v: isinstance(v, (int, float)) and 1 <= v <= 100,
+    "person_padding": lambda v: isinstance(v, (int, float)) and 0 <= v <= 200,
+    "detection_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
+    "nms_iou_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "nms_iou_internal": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "yolo_model": lambda v: isinstance(v, str) and v in ("yolov8x.pt", "yolov8n.pt"),
+    "sliding_window_grid": lambda v: isinstance(v, int) and 1 <= v <= 10,
+    "sliding_window_overlap": lambda v: isinstance(v, (int, float)) and 0.0 <= v <= 0.9,
+    "max_refinement_passes": lambda v: isinstance(v, int) and 1 <= v <= 10,
+    "smoothing_alpha": lambda v: isinstance(v, (int, float)) and 0.0 < v <= 1.0,
+    "ghost_frames": lambda v: isinstance(v, int) and 0 <= v <= 120,
+    "ghost_expansion": lambda v: isinstance(v, (int, float)) and 1.0 <= v <= 2.0,
+    "track_max_age": lambda v: isinstance(v, int) and 1 <= v <= 300,
+    "track_match_thresh": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "adaptive_reference_height": lambda v: isinstance(v, int) and 10 <= v <= 500,
+    "post_render_check_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
+    "refinement_overlap_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "edge_padding_multiplier": lambda v: isinstance(v, (int, float)) and 1.0 <= v <= 5.0,
+    "edge_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 0.5,
+    "motion_threshold": lambda v: isinstance(v, int) and 1 <= v <= 255,
+    "motion_min_area": lambda v: isinstance(v, int) and 1 <= v <= 100000,
+    "motion_padding": lambda v: isinstance(v, int) and 0 <= v <= 500,
+    "quality_clahe_clip": lambda v: isinstance(v, (int, float)) and 0.1 <= v <= 10.0,
+    "quality_darkness_threshold": lambda v: isinstance(v, int) and 0 <= v <= 255,
+    "interpolation_fps_threshold": lambda v: isinstance(v, int) and 1 <= v <= 120,
+}
+
+# Campi booleani: accettano solo bool
+_BOOL_FIELDS = {
+    "enable_fisheye_correction",
+    "enable_motion_detection",
+    "enable_sliding_window",
+    "enable_tracking",
+    "enable_temporal_smoothing",
+    "enable_adaptive_intensity",
+    "enable_subframe_interpolation",
+    "enable_post_render_check",
+    "enable_debug_video",
+    "enable_confidence_report",
+}
+
+
+def validate_config_params(web_config: dict) -> tuple[bool, str]:
+    """
+    Valida i parametri di configurazione prima di applicarli.
+
+    Parameters
+    ----------
+    web_config : dict
+        Parametri dalla form web.
+
+    Returns
+    -------
+    tuple[bool, str]
+        (True, "") se valido, (False, messaggio_errore) altrimenti.
+    """
+    for key, value in web_config.items():
+        if key in _BOOL_FIELDS:
+            if not isinstance(value, bool):
+                return False, f"Parametro '{key}' deve essere booleano"
+        elif key in _CONFIG_VALIDATORS:
+            if not _CONFIG_VALIDATORS[key](value):
+                return False, f"Parametro '{key}' non valido: {value!r}"
+    return True, ""
+
 
 def _build_config(web_config: dict) -> PipelineConfig:
     """Crea PipelineConfig dai parametri dell'interfaccia web.
@@ -28,7 +96,16 @@ def _build_config(web_config: dict) -> PipelineConfig:
     PipelineConfig
         Istanza configurata con i valori ricevuti; i campi non presenti
         in web_config mantengono il valore di default di PipelineConfig.
+
+    Raises
+    ------
+    ValueError
+        Se un parametro non supera la validazione.
     """
+    valid, msg = validate_config_params(web_config)
+    if not valid:
+        raise ValueError(msg)
+
     field_map = {
         "operation_mode": "operation_mode",
         "anonymization_method": "anonymization_method",
@@ -168,11 +245,18 @@ class TqdmCapture:
 class StdoutCapture:
     """Cattura stdout e invia le righe come eventi SSE 'log'."""
 
+    _PATH_RE = re.compile(r"/[^\s]*/(uploads|outputs)/[^\s]+")
+
     def __init__(self, sse: SSEManager, job_id: str):
         self._sse = sse
         self._job_id = job_id
         self._original = None
         self._buffer = ""
+
+    @classmethod
+    def _sanitize_message(cls, msg: str) -> str:
+        """Rimuove path assoluti dai messaggi di log inviati al client."""
+        return cls._PATH_RE.sub("[FILE]", msg)
 
     def install(self):
         self._original = sys.stdout
@@ -190,18 +274,19 @@ class StdoutCapture:
             line, self._buffer = self._buffer.split("\n", 1)
             line = line.strip()
             if line:
+                sanitized = self._sanitize_message(line)
                 # Detecta fasi dalla stampa
-                phase_match = re.match(r"\[FASE (\d)/5\]", line)
+                phase_match = re.match(r"\[FASE (\d)/5\]", sanitized)
                 if phase_match:
                     self._sse.emit(
                         self._job_id,
                         "phase_label",
                         {
                             "phase": int(phase_match.group(1)),
-                            "label": line,
+                            "label": sanitized,
                         },
                     )
-                self._sse.emit(self._job_id, "log", {"message": line})
+                self._sse.emit(self._job_id, "log", {"message": sanitized})
 
     def flush(self):
         if self._original:
@@ -259,11 +344,28 @@ class PipelineRunner:
 
     def _run(self, job_id: str, video_path: str, config_dict: dict, review_json: str | None):
         """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
+        import logging
 
         import person_anonymizer as pa
 
-        # --- Crea config dalla web form ---
-        config = _build_config(config_dict)
+        _log = logging.getLogger(__name__)
+
+        # --- Crea config dalla web form (con validazione) ---
+        try:
+            config = _build_config(config_dict)
+        except ValueError as e:
+            self._sse.emit(
+                job_id,
+                "error",
+                {
+                    "job_id": job_id,
+                    "message": f"Configurazione non valida: {e}",
+                },
+            )
+            self._sse.close(job_id)
+            with self._lock:
+                self._current_job_id = None
+            return
 
         # --- Assicura path assoluto per il modello YOLO ---
         pa_dir = Path(pa.__file__).resolve().parent
@@ -332,19 +434,18 @@ class PipelineRunner:
 
         except SystemExit as e:
             # run_pipeline chiama sys.exit(1) su errori
+            exit_code = e.code if isinstance(e.code, int) else 1
             self._sse.emit(
                 job_id,
                 "error",
                 {
                     "job_id": job_id,
-                    "message": f"Pipeline terminata con codice {e.code}",
+                    "message": f"Pipeline terminata con codice {exit_code}",
                 },
             )
 
-        except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).exception("Pipeline error for job %s", job_id)
+        except Exception:
+            _log.exception("Pipeline error for job %s", job_id)
             self._sse.emit(
                 job_id,
                 "error",

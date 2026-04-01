@@ -55,60 +55,6 @@ from postprocessing import (
 )
 
 # ============================================================
-# BACKWARD COMPATIBILITY — costanti module-level
-# La web app accede a queste via `import person_anonymizer as pa`
-# ============================================================
-_DEFAULT = PipelineConfig()
-OPERATION_MODE = _DEFAULT.operation_mode
-ANONYMIZATION_METHOD = _DEFAULT.anonymization_method
-ANONYMIZATION_INTENSITY = _DEFAULT.anonymization_intensity
-PERSON_PADDING = _DEFAULT.person_padding
-EDGE_PADDING_MULTIPLIER = _DEFAULT.edge_padding_multiplier
-EDGE_THRESHOLD = _DEFAULT.edge_threshold
-DETECTION_CONFIDENCE = _DEFAULT.detection_confidence
-NMS_IOU_INTERNAL = _DEFAULT.nms_iou_internal
-NMS_IOU_THRESHOLD = _DEFAULT.nms_iou_threshold
-YOLO_MODEL = _DEFAULT.yolo_model
-ENABLE_FISHEYE_CORRECTION = _DEFAULT.enable_fisheye_correction
-CAMERA_MATRIX = _DEFAULT.camera_matrix
-DIST_COEFFICIENTS = _DEFAULT.dist_coefficients
-ENABLE_MOTION_DETECTION = _DEFAULT.enable_motion_detection
-MOTION_THRESHOLD = _DEFAULT.motion_threshold
-MOTION_MIN_AREA = _DEFAULT.motion_min_area
-MOTION_PADDING = _DEFAULT.motion_padding
-ENABLE_SLIDING_WINDOW = _DEFAULT.enable_sliding_window
-SLIDING_WINDOW_GRID = _DEFAULT.sliding_window_grid
-SLIDING_WINDOW_OVERLAP = _DEFAULT.sliding_window_overlap
-INFERENCE_SCALES = _DEFAULT.inference_scales
-TTA_AUGMENTATIONS = _DEFAULT.tta_augmentations
-QUALITY_CLAHE_CLIP = _DEFAULT.quality_clahe_clip
-QUALITY_CLAHE_GRID = _DEFAULT.quality_clahe_grid
-QUALITY_DARKNESS_THRESHOLD = _DEFAULT.quality_darkness_threshold
-ENABLE_TRACKING = _DEFAULT.enable_tracking
-TRACK_MAX_AGE = _DEFAULT.track_max_age
-TRACK_MATCH_THRESH = _DEFAULT.track_match_thresh
-ENABLE_TEMPORAL_SMOOTHING = _DEFAULT.enable_temporal_smoothing
-SMOOTHING_ALPHA = _DEFAULT.smoothing_alpha
-GHOST_FRAMES = _DEFAULT.ghost_frames
-GHOST_EXPANSION = _DEFAULT.ghost_expansion
-ENABLE_ADAPTIVE_INTENSITY = _DEFAULT.enable_adaptive_intensity
-ADAPTIVE_REFERENCE_HEIGHT = _DEFAULT.adaptive_reference_height
-ENABLE_SUBFRAME_INTERPOLATION = _DEFAULT.enable_subframe_interpolation
-INTERPOLATION_FPS_THRESHOLD = _DEFAULT.interpolation_fps_threshold
-ENABLE_POST_RENDER_CHECK = _DEFAULT.enable_post_render_check
-POST_RENDER_CHECK_CONFIDENCE = _DEFAULT.post_render_check_confidence
-MAX_REFINEMENT_PASSES = _DEFAULT.max_refinement_passes
-REFINEMENT_OVERLAP_THRESHOLD = _DEFAULT.refinement_overlap_threshold
-REVIEW_AUTO_COLOR = _DEFAULT.review_auto_color
-REVIEW_MANUAL_COLOR = _DEFAULT.review_manual_color
-REVIEW_DRAWING_COLOR = _DEFAULT.review_drawing_color
-REVIEW_FILL_ALPHA = _DEFAULT.review_fill_alpha
-REVIEW_WINDOW_MAX_WIDTH = _DEFAULT.review_window_max_width
-ENABLE_DEBUG_VIDEO = _DEFAULT.enable_debug_video
-ENABLE_CONFIDENCE_REPORT = _DEFAULT.enable_confidence_report
-
-
-# ============================================================
 # SOTTO-FUNZIONI DI run_pipeline
 # ============================================================
 

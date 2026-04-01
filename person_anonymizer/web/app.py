@@ -39,7 +39,7 @@ pipeline_runner = PipelineRunner(sse_manager, OUTPUT_DIR)
 
 def validate_job_id(job_id: str) -> bool:
     """Verifica che job_id sia un hex di 12 caratteri minuscoli."""
-    if not job_id:
+    if not job_id or len(job_id) != 12:
         return False
     return bool(re.match(r"^[a-f0-9]{12}$", job_id))
 
@@ -49,9 +49,10 @@ def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "style-src 'self' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
         "connect-src 'self'"
@@ -155,12 +156,15 @@ def start_pipeline():
         return jsonify({"error": "job_id non valido"}), 400
 
     video_path = data.get("video_path")
-    if not video_path or not Path(video_path).exists():
-        return jsonify({"error": "Video non trovato"}), 404
+    if not video_path:
+        return jsonify({"error": "video_path mancante"}), 400
 
     resolved = Path(video_path).resolve()
     if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
         return jsonify({"error": "Path non autorizzato"}), 403
+
+    if not resolved.exists():
+        return jsonify({"error": "Video non trovato"}), 404
 
     config = data.get("config", {})
     review_json = data.get("review_json")
@@ -330,7 +334,9 @@ def download_file(job_id, file_type):
 
     for f in job_out.iterdir():
         if f.name.endswith(suffix):
-            return send_file(str(f), as_attachment=True)
+            resp = send_file(str(f), as_attachment=True)
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
 
     return jsonify({"error": f"File {file_type} non trovato"}), 404
 

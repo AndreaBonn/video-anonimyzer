@@ -13,9 +13,9 @@ from postprocessing import (
     _merge_overlapping_rects,
     _merge_rects,
     _rects_overlap,
+    filter_artifact_detections,
     normalize_annotations,
 )
-
 
 # ============================================================
 # _rects_overlap
@@ -109,7 +109,7 @@ class TestMergeRects:
         x, y, w, h = result
         assert x == 0
         assert y == 0
-        assert x + w == 15   # max(0+10, 5+10)
+        assert x + w == 15  # max(0+10, 5+10)
         assert y + h == 15
 
     def test_merge_separated_rects(self):
@@ -327,3 +327,142 @@ class TestNormalizeAnnotations:
 
         # Assert — nessun poligono → nessuna intensità
         assert result[0]["intensities"] == []
+
+
+# ============================================================
+# filter_artifact_detections
+# ============================================================
+
+
+class TestFilterArtifactDetections:
+    """Verifica il filtraggio di rilevamenti artefatto post-render.
+
+    La funzione confronta ogni detection box (x1, y1, x2, y2, conf) con le
+    annotazioni esistenti del frame: se IoU >= threshold il box è artefatto,
+    altrimenti è genuino.
+
+    I poligoni di annotazione sono rettangolari per semplificare il calcolo
+    manuale dell'IoU atteso. polygon_to_bbox estrae il bounding box minimo,
+    quindi [(x1,y1),(x2,y1),(x2,y2),(x1,y2)] produce bbox [x1, y1, x2, y2].
+    """
+
+    def test_empty_alert_frames(self):
+        # Arrange — nessun frame di alert
+        alert_frames = []
+        annotations = {}
+        iou_threshold = 0.5
+
+        # Act
+        genuine_alerts, total_artifacts, total_genuine = filter_artifact_detections(
+            alert_frames, annotations, iou_threshold
+        )
+
+        # Assert
+        assert genuine_alerts == []
+        assert total_artifacts == 0
+        assert total_genuine == 0
+
+    def test_all_artifacts_filtered(self):
+        # Arrange — detection box identico al poligono annotato: IoU = 1.0 >= 0.5
+        # Annotazione sul frame 0: poligono rettangolare [10,10] → [50,50]
+        # Detection box uguale: [10, 10, 50, 50, 0.9] → IoU = 1.0
+        annotations = {
+            0: {
+                "auto": [[(10, 10), (50, 10), (50, 50), (10, 50)]],
+                "manual": [],
+            }
+        }
+        nms_boxes = [[10, 10, 50, 50, 0.9]]
+        alert_frames = [(0, 1, nms_boxes)]
+        iou_threshold = 0.5
+
+        # Act
+        genuine_alerts, total_artifacts, total_genuine = filter_artifact_detections(
+            alert_frames, annotations, iou_threshold
+        )
+
+        # Assert — nessun box genuino, un artefatto
+        assert genuine_alerts == []
+        assert total_artifacts == 1
+        assert total_genuine == 0
+
+    def test_genuine_detection_kept(self):
+        # Arrange — detection box in zona non annotata: IoU = 0.0 < 0.5
+        # Annotazione: [0, 0, 40, 40]; detection lontana: [100, 100, 140, 140]
+        annotations = {
+            0: {
+                "auto": [[(0, 0), (40, 0), (40, 40), (0, 40)]],
+                "manual": [],
+            }
+        }
+        nms_boxes = [[100, 100, 140, 140, 0.85]]
+        alert_frames = [(0, 1, nms_boxes)]
+        iou_threshold = 0.5
+
+        # Act
+        genuine_alerts, total_artifacts, total_genuine = filter_artifact_detections(
+            alert_frames, annotations, iou_threshold
+        )
+
+        # Assert — il box è genuino: deve comparire in genuine_alerts
+        assert len(genuine_alerts) == 1
+        frame_idx, genuine_boxes = genuine_alerts[0]
+        assert frame_idx == 0
+        assert len(genuine_boxes) == 1
+        assert genuine_boxes[0] == nms_boxes[0]
+        assert total_artifacts == 0
+        assert total_genuine == 1
+
+    def test_mixed_artifacts_and_genuine(self):
+        # Arrange — due detection box sullo stesso frame:
+        #   box A [0, 0, 40, 40] sovrapposto con annotazione [0,0,40,40] → IoU=1.0 → artefatto
+        #   box B [200, 200, 240, 240] lontano da annotazione → IoU=0.0 → genuino
+        annotations = {
+            5: {
+                "auto": [[(0, 0), (40, 0), (40, 40), (0, 40)]],
+                "manual": [],
+            }
+        }
+        box_artifact = [0, 0, 40, 40, 0.95]
+        box_genuine = [200, 200, 240, 240, 0.80]
+        nms_boxes = [box_artifact, box_genuine]
+        alert_frames = [(5, 2, nms_boxes)]
+        iou_threshold = 0.5
+
+        # Act
+        genuine_alerts, total_artifacts, total_genuine = filter_artifact_detections(
+            alert_frames, annotations, iou_threshold
+        )
+
+        # Assert
+        assert total_artifacts == 1
+        assert total_genuine == 1
+        assert len(genuine_alerts) == 1
+        frame_idx, genuine_boxes = genuine_alerts[0]
+        assert frame_idx == 5
+        assert len(genuine_boxes) == 1
+        assert genuine_boxes[0] == box_genuine
+
+    def test_no_existing_annotations(self):
+        # Arrange — frame senza alcuna annotazione: nessun bbox esistente
+        # → ogni detection ha IoU=0.0 con tutti gli existing (lista vuota)
+        # → tutti i box sono genuini
+        annotations = {}
+        nms_boxes = [
+            [10, 10, 50, 50, 0.9],
+            [60, 60, 100, 100, 0.75],
+        ]
+        alert_frames = [(3, 2, nms_boxes)]
+        iou_threshold = 0.5
+
+        # Act
+        genuine_alerts, total_artifacts, total_genuine = filter_artifact_detections(
+            alert_frames, annotations, iou_threshold
+        )
+
+        # Assert — tutti genuini, nessun artefatto
+        assert total_artifacts == 0
+        assert total_genuine == 2
+        assert len(genuine_alerts) == 1
+        _, genuine_boxes = genuine_alerts[0]
+        assert len(genuine_boxes) == 2

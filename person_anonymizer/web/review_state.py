@@ -26,15 +26,25 @@ class ReviewState:
         self._fisheye_enabled = False
         self._undist_map1 = None
         self._undist_map2 = None
+        self._cap = None
 
     @property
     def is_active(self):
         with self._lock:
             return self._active
 
-    def setup(self, video_path, annotations, total_frames,
-              frame_w, frame_h, fps,
-              fisheye_enabled=False, undist_map1=None, undist_map2=None):
+    def setup(
+        self,
+        video_path,
+        annotations,
+        total_frames,
+        frame_w,
+        frame_h,
+        fps,
+        fisheye_enabled=False,
+        undist_map1=None,
+        undist_map2=None,
+    ):
         """Chiamato dal pipeline thread quando le annotazioni sono pronte.
 
         Parameters
@@ -68,6 +78,10 @@ class ReviewState:
             self._fisheye_enabled = fisheye_enabled
             self._undist_map1 = undist_map1
             self._undist_map2 = undist_map2
+            # Apri VideoCapture una sola volta per tutta la review
+            if self._cap is not None:
+                self._cap.release()
+            self._cap = cv2.VideoCapture(video_path)
             self._active = True
             self._event.clear()
 
@@ -83,6 +97,9 @@ class ReviewState:
         with self._lock:
             result = copy.deepcopy(self._annotations)
             self._active = False
+            if self._cap is not None:
+                self._cap.release()
+                self._cap = None
             return result
 
     def complete(self, annotations):
@@ -114,19 +131,15 @@ class ReviewState:
             tra la dimensione visualizzata e quella originale.
         """
         with self._lock:
-            video_path = self._video_path
+            if self._cap is None or not self._cap.isOpened():
+                return None, 1.0
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = self._cap.read()
+            if not ret:
+                return None, 1.0
             fisheye = self._fisheye_enabled
             map1 = self._undist_map1
             map2 = self._undist_map2
-
-        cap = cv2.VideoCapture(video_path)
-        try:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if not ret:
-                return None, 1.0
-        finally:
-            cap.release()
 
         if fisheye and map1 is not None and map2 is not None:
             frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
@@ -137,8 +150,7 @@ class ReviewState:
             scale = max_width / w
             new_w = max_width
             new_h = int(h * scale)
-            frame = cv2.resize(frame, (new_w, new_h),
-                               interpolation=cv2.INTER_AREA)
+            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
         _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         return jpeg.tobytes(), scale

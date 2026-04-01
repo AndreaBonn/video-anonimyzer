@@ -662,11 +662,15 @@ input[type="range"]::-moz-range-thumb {
     position: relative;
 }
 .progress-fill {
+    width: 0%;
     height: 100%;
     background: linear-gradient(90deg, var(--accent), #5eead4);
     border-radius: 5px;
     transition: width 0.3s ease;
     position: relative;
+}
+.btn-confirm-review {
+    margin-top: 0.5rem;
 }
 .progress-fill::after {
     content: "";
