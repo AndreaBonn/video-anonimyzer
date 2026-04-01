@@ -66,7 +66,7 @@
             <div id="section-base" class="card-body">
 
                 <div class="form-group">
-                    <label>Modalit&agrave; operativa</label>
+                    <label>Modalit&agrave; operativa <button type="button" class="help-btn" data-help="Automatica: elabora tutto senza intervento. Manuale: permette di rivedere e correggere i rilevamenti nel browser prima del rendering finale." aria-label="Aiuto: Modalità operativa">?</button></label>
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="operation_mode" value="auto" checked>
@@ -80,7 +80,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Metodo di oscuramento</label>
+                    <label>Metodo di oscuramento <button type="button" class="help-btn" data-help="Pixelation: rende irriconoscibile la persona con effetto mosaico. Blur: sfoca l'area con effetto gaussiano." aria-label="Aiuto: Metodo di oscuramento">?</button></label>
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="anonymization_method" value="pixelation" checked>
@@ -95,14 +95,14 @@
 
                 <div class="form-group">
                     <label for="anonymization_intensity">
-                        Intensit&agrave; oscuramento: <span class="value-display" id="val-intensity">10</span>
+                        Intensit&agrave; oscuramento: <span class="value-display" id="val-intensity">10</span> <button type="button" class="help-btn" data-help="Valore più alto = oscuramento più forte. Controlla la dimensione dei pixel (pixelation) o il raggio di sfocatura (blur)." aria-label="Aiuto: Intensità oscuramento">?</button>
                     </label>
                     <input type="range" id="anonymization_intensity" min="2" max="50" value="10" step="1">
                 </div>
 
                 <div class="form-group">
                     <label for="person_padding">
-                        Padding persona (px): <span class="value-display" id="val-padding">15</span>
+                        Padding persona (px): <span class="value-display" id="val-padding">15</span> <button type="button" class="help-btn" data-help="Pixel aggiuntivi intorno alla persona rilevata. Valori più alti oscurano un'area più ampia attorno alla sagoma per maggiore sicurezza." aria-label="Aiuto: Padding persona">?</button>
                     </label>
                     <input type="range" id="person_padding" min="0" max="60" value="15" step="1">
                 </div>
@@ -118,7 +118,7 @@
             <div id="section-detection" class="card-body">
 
                 <div class="form-group">
-                    <label for="yolo_model">Modello YOLO</label>
+                    <label for="yolo_model">Modello YOLO <button type="button" class="help-btn" data-help="YOLOv8x: più accurato ma più lento, consigliato per persone piccole o distanti. YOLOv8n: molto più veloce, adatto per persone ben visibili." aria-label="Aiuto: Modello YOLO">?</button></label>
                     <select id="yolo_model">
                         <option value="yolov8x.pt">YOLOv8x (accurato, lento)</option>
                         <option value="yolov8n.pt">YOLOv8n (veloce, meno accurato)</option>
@@ -127,14 +127,14 @@
 
                 <div class="form-group">
                     <label for="detection_confidence">
-                        Confidenza rilevamento: <span class="value-display" id="val-confidence">0.20</span>
+                        Confidenza rilevamento: <span class="value-display" id="val-confidence">0.20</span> <button type="button" class="help-btn" data-help="Soglia minima di confidenza per accettare un rilevamento. Più bassa = più rilevamenti (anche falsi positivi), più alta = solo rilevamenti certi." aria-label="Aiuto: Confidenza rilevamento">?</button>
                     </label>
                     <input type="range" id="detection_confidence" min="0.05" max="0.95" value="0.20" step="0.05">
                 </div>
 
                 <div class="form-group">
                     <label for="nms_iou_threshold">
-                        NMS IoU threshold: <span class="value-display" id="val-nms">0.55</span>
+                        NMS IoU threshold: <span class="value-display" id="val-nms">0.55</span> <button type="button" class="help-btn" data-help="Soglia per eliminare rilevamenti duplicati sovrapposti. Più bassa = rimozione duplicati più aggressiva, più alta = mantiene rilevamenti vicini." aria-label="Aiuto: NMS IoU threshold">?</button>
                     </label>
                     <input type="range" id="nms_iou_threshold" min="0.1" max="0.9" value="0.55" step="0.05">
                 </div>
@@ -154,41 +154,49 @@
                         <input type="checkbox" id="enable_sliding_window" checked>
                         <span class="toggle-switch"></span>
                         Sliding Window
+                        <button type="button" class="help-btn" data-help="Analizza il frame in sotto-regioni sovrapposte per rilevare persone piccole o ai bordi che il modello potrebbe non vedere nell'immagine completa." aria-label="Aiuto: Sliding Window">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_tracking" checked>
                         <span class="toggle-switch"></span>
                         ByteTrack Tracking
+                        <button type="button" class="help-btn" data-help="Associa le persone tra frame consecutivi per mantenere un'identità consistente e ridurre falsi negativi temporanei." aria-label="Aiuto: ByteTrack Tracking">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_temporal_smoothing" checked>
                         <span class="toggle-switch"></span>
                         Temporal Smoothing (EMA)
+                        <button type="button" class="help-btn" data-help="Smussa le coordinate dei bounding box nel tempo con media mobile esponenziale, riducendo il tremolio dell'oscuramento." aria-label="Aiuto: Temporal Smoothing">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_adaptive_intensity" checked>
                         <span class="toggle-switch"></span>
                         Intensit&agrave; Adattiva
+                        <button type="button" class="help-btn" data-help="Regola automaticamente l'intensità in base alla dimensione della persona: più piccola = più intensa per garantire l'anonimizzazione." aria-label="Aiuto: Intensità Adattiva">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_post_render_check" checked>
                         <span class="toggle-switch"></span>
                         Verifica Post-Rendering
+                        <button type="button" class="help-btn" data-help="Dopo il rendering, rianalizza il video anonimizzato per verificare che non siano rimaste persone visibili. Aggiunge un passaggio di sicurezza." aria-label="Aiuto: Verifica Post-Rendering">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_fisheye_correction" checked>
                         <span class="toggle-switch"></span>
                         Correzione Fish-eye
+                        <button type="button" class="help-btn" data-help="Compensa la distorsione delle telecamere grandangolari, migliorando l'accuratezza del rilevamento ai bordi dell'immagine." aria-label="Aiuto: Correzione Fish-eye">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_motion_detection">
                         <span class="toggle-switch"></span>
                         Motion Detection
+                        <button type="button" class="help-btn" data-help="Analizza solo le aree con movimento rilevato, velocizzando l'elaborazione su scene con ampie zone statiche." aria-label="Aiuto: Motion Detection">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_subframe_interpolation">
                         <span class="toggle-switch"></span>
                         Interpolazione Sub-frame
+                        <button type="button" class="help-btn" data-help="Genera oscuramenti intermedi tra i frame analizzati per video ad alto framerate, evitando discontinuità nell'oscuramento." aria-label="Aiuto: Interpolazione Sub-frame">?</button>
                     </label>
                 </div>
 
@@ -199,11 +207,13 @@
                         <input type="checkbox" id="enable_debug_video" checked>
                         <span class="toggle-switch"></span>
                         Genera video debug
+                        <button type="button" class="help-btn" data-help="Produce un video aggiuntivo con bounding box, ID di tracking e confidenze visibili per verificare la qualità del rilevamento." aria-label="Aiuto: Video debug">?</button>
                     </label>
                     <label class="toggle-label">
                         <input type="checkbox" id="enable_confidence_report" checked>
                         <span class="toggle-switch"></span>
                         Genera report CSV
+                        <button type="button" class="help-btn" data-help="Crea un file CSV con statistiche dettagliate: confidenze per frame, numero di persone rilevate, aree coperte." aria-label="Aiuto: Report CSV">?</button>
                     </label>
                 </div>
             </div>
@@ -228,6 +238,7 @@
                     <input type="checkbox" id="normalize">
                     <span class="toggle-switch"></span>
                     Normalizza poligoni in rettangoli
+                    <button type="button" class="help-btn" data-help="Converte eventuali poligoni irregolari nelle annotazioni JSON in rettangoli regolari (bounding box) per un oscuramento uniforme." aria-label="Aiuto: Normalizza poligoni">?</button>
                 </label>
             </div>
         </section>

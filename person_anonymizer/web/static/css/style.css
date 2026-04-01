@@ -779,6 +779,96 @@ input[type="range"]::-moz-range-thumb {
     font-family: var(--font-mono);
 }
 
+/* --- Help Tooltip --- */
+.help-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid var(--border-emphasis);
+    background: var(--bg-inset);
+    color: var(--text-sec);
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    position: relative;
+    vertical-align: middle;
+    margin-left: var(--sp-1);
+    padding: 0;
+    line-height: 1;
+    transition: all var(--transition);
+    flex-shrink: 0;
+}
+.help-btn:hover,
+.help-btn:focus-visible {
+    background: var(--accent-muted);
+    border-color: var(--accent);
+    color: var(--accent);
+    outline: none;
+}
+.help-btn::after {
+    content: attr(data-help);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 260px;
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border-emphasis);
+    border-radius: var(--radius);
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.5;
+    box-shadow: var(--shadow-lg);
+    white-space: normal;
+    text-align: left;
+    z-index: 500;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), visibility var(--transition);
+}
+/* Freccia tooltip */
+.help-btn::before {
+    content: "";
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--border-emphasis);
+    z-index: 501;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), visibility var(--transition);
+}
+.help-btn:hover::after,
+.help-btn:hover::before,
+.help-btn:focus-visible::after,
+.help-btn:focus-visible::before,
+.help-btn.active::after,
+.help-btn.active::before {
+    opacity: 1;
+    visibility: visible;
+}
+/* Se il tooltip esce dal pannello sinistro, riallinealo a sinistra */
+.toggle-label .help-btn::after {
+    left: auto;
+    right: -8px;
+    transform: none;
+}
+.toggle-label .help-btn::before {
+    left: 50%;
+    transform: translateX(-50%);
+}
+
 /* --- Hint text --- */
 .hint {
     font-size: 0.78rem;

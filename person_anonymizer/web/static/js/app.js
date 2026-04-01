@@ -118,6 +118,19 @@
         });
     });
 
+    // === Help tooltip: click toggle (mobile support) ===
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".help-btn");
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            $$(".help-btn.active").forEach((b) => { if (b !== btn) b.classList.remove("active"); });
+            btn.classList.toggle("active");
+            return;
+        }
+        $$(".help-btn.active").forEach((b) => b.classList.remove("active"));
+    });
+
     // === Slider value display + fill visualization ===
     const sliders = [
         ["anonymization_intensity", "val-intensity", null],
