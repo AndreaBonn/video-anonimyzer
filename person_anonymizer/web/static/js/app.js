@@ -258,6 +258,15 @@
         }
     });
 
+    // === Backend selector: mostra/nasconde modello YOLO ===
+    const backendSelect = document.getElementById("detection_backend");
+    const yoloModelGroup = document.getElementById("yolo-model-group");
+    if (backendSelect && yoloModelGroup) {
+        backendSelect.addEventListener("change", () => {
+            yoloModelGroup.style.display = backendSelect.value === "sam3" ? "none" : "";
+        });
+    }
+
     // === Dropzone: keyboard support ===
     dropzone.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
