@@ -6,17 +6,15 @@ normalize_annotations (solo path senza poligoni, per evitare cv2.boundingRect)
 sono testate in isolamento tramite import diretto.
 """
 
-import pytest
-
 from person_anonymizer.config import PipelineConfig
-from person_anonymizer.postprocessing import (
-    filter_artifact_detections,
-    normalize_annotations,
-)
 from person_anonymizer.normalization import (
     _merge_overlapping_rects,
     _merge_rects,
     _rects_overlap,
+)
+from person_anonymizer.postprocessing import (
+    filter_artifact_detections,
+    normalize_annotations,
 )
 
 # ============================================================
@@ -196,7 +194,7 @@ class TestMergeOverlappingRects:
         # A: [0,0,10,10] → x in [0,10)
         # B: [8,0,10,10] → x in [8,18)
         # C: [16,0,10,10] → x in [16,26)
-        # A∩B: overlap (8<10 e 10>8 → True); B∩C: overlap; A∩C: A finisce a 10, C inizia a 16 → no overlap
+        # A∩B: overlap; B∩C: overlap; A∩C: no overlap (A ends at 10, C at 16)
         rects = [
             (0, 0, 10, 10),
             (8, 0, 10, 10),

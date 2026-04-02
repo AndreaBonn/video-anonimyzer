@@ -9,11 +9,10 @@ import tempfile
 
 import cv2
 import numpy as np
-import pytest
 
-from person_anonymizer.rendering import render_video, compute_review_stats
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import FisheyeContext
+from person_anonymizer.rendering import compute_review_stats, render_video
 
 
 class TestComputeReviewStats:

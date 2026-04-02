@@ -8,7 +8,7 @@ non è disponibile. Tutte le altre funzioni usano solo numpy.
 import pytest
 
 try:
-    import cv2 as _cv2
+    import cv2 as _cv2  # noqa: F401
 
     CV2_AVAILABLE = True
 except ImportError:

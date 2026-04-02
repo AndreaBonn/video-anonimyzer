@@ -7,6 +7,7 @@ Nessuna dipendenza da cv2, ultralytics o YOLO.
 """
 
 import io
+
 import pytest
 
 # conftest aggiunge person_anonymizer/ al path
@@ -545,7 +546,7 @@ class TestSSESubscriberCap:
 
     def test_subscriber_cap_raises_after_limit(self):
         # Arrange
-        from person_anonymizer.web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+        from person_anonymizer.web.sse_manager import _MAX_SUBSCRIBERS_PER_JOB, SSEManager
 
         mgr = SSEManager()
         job_id = "test_job_cap"
@@ -561,7 +562,7 @@ class TestSSESubscriberCap:
 
     def test_subscriber_cap_freed_after_unsubscribe(self):
         # Arrange
-        from person_anonymizer.web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+        from person_anonymizer.web.sse_manager import _MAX_SUBSCRIBERS_PER_JOB, SSEManager
 
         mgr = SSEManager()
         job_id = "test_job_free"

@@ -5,9 +5,8 @@ Testa le funzioni di I/O senza dipendenze da cv2/YOLO.
 """
 
 import json
-import os
+
 import pytest
-from unittest.mock import patch
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import PipelineInputError

@@ -2,11 +2,11 @@
 Test per cli.py — parsing argomenti e gestione errori.
 """
 
-import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from person_anonymizer.cli import parse_args, main
+import pytest
+
+from person_anonymizer.cli import main, parse_args
 from person_anonymizer.models import PipelineContext, PipelineError, PipelineInputError
 
 
@@ -123,7 +123,10 @@ class TestParseArgs:
 class TestMain:
     """Test per main() — gestione errori."""
 
-    @patch("person_anonymizer.pipeline.run_pipeline", side_effect=PipelineInputError("file non trovato"))
+    @patch(
+        "person_anonymizer.pipeline.run_pipeline",
+        side_effect=PipelineInputError("file non trovato"),
+    )
     def test_pipeline_input_error_exits_1(self, mock_run):
         # Arrange / Act / Assert
         with patch("sys.argv", ["cli", "video.mp4"]):

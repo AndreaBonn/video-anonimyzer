@@ -5,14 +5,15 @@ import pytest
 
 try:
     import cv2
+
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
 
-from person_anonymizer.preprocessing import should_interpolate, interpolate_frames
+from person_anonymizer.preprocessing import interpolate_frames, should_interpolate
 
 if CV2_AVAILABLE:
-    from person_anonymizer.preprocessing import enhance_frame, MotionDetector
+    from person_anonymizer.preprocessing import MotionDetector, enhance_frame
 
 
 class TestShouldInterpolate:

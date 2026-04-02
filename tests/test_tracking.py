@@ -5,8 +5,6 @@ Non richiede cv2, ultralytics o modelli pesanti: TemporalSmoother
 usa solo numpy internamente.
 """
 
-import pytest
-
 from person_anonymizer.tracking import TemporalSmoother
 
 # ============================================================

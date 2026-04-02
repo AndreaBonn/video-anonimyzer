@@ -7,7 +7,7 @@ senza alcuna dipendenza da cv2, ultralytics o modelli pesanti.
 
 import pytest
 
-from person_anonymizer.config import PipelineConfig, SUPPORTED_EXTENSIONS, VERSION
+from person_anonymizer.config import SUPPORTED_EXTENSIONS, VERSION, PipelineConfig
 
 
 class TestPipelineConfigInvariants:
