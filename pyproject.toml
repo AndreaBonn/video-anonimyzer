@@ -1,8 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "person-anonymizer"
-version = "7.1.0"
+dynamic = ["version"]
 description = "Tool di anonimizzazione persone in video di sorveglianza"
 requires-python = ">=3.10"
+dependencies = [
+    "ultralytics==8.4.21",
+    "opencv-python==4.13.0.92",
+    "ffmpeg-python==0.2.0",
+    "flask==3.1.0",
+    "flask-limiter==3.12",
+    "numpy==2.4.2",
+    "tqdm==4.67.3",
+]
+
+[project.scripts]
+person-anonymizer = "person_anonymizer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["person_anonymizer*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "person_anonymizer.config.VERSION"}
 
 [tool.ruff]
 line-length = 100

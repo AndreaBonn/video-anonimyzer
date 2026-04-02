@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import cv2
+    import numpy as np
     from .preprocessing import MotionDetector
     from .tracking import TemporalSmoother
     from .web.review_state import ReviewState
@@ -63,12 +65,54 @@ class PipelineResult:
 class FrameProcessors:
     """Processori inizializzati per il loop di detection."""
 
-    clahe_obj: object  # cv2.CLAHE
-    motion_detector: object  # MotionDetector | None
-    patches: list
-    tracker: object  # BYTETracker | None
-    smoother: object  # TemporalSmoother | None
-    do_interpolation: bool
+    clahe_obj: cv2.CLAHE | None = None
+    motion_detector: MotionDetector | None = None
+    patches: list = field(default_factory=list)
+    tracker: object = None  # BYTETracker (no type stub disponibile)
+    smoother: TemporalSmoother | None = None
+    do_interpolation: bool = False
+
+
+@dataclass
+class FrameDetectionResult:
+    """Risultato dell'elaborazione di un singolo frame."""
+
+    polygons: list
+    intensities: list
+    tracked: list
+    sw_hits: int
+    ms_hits: int
+    active_ids: set
+    prev_interp_frame: object  # np.ndarray | None
+    motion_count: int
+
+
+@dataclass
+class FisheyeContext:
+    """Contesto di correzione fish-eye."""
+
+    enabled: bool = False
+    undist_map1: object = None  # np.ndarray | None
+    undist_map2: object = None  # np.ndarray | None
+
+    def undistort(self, frame):
+        """Applica undistortion se abilitato. Restituisce il frame.
+
+        Parameters
+        ----------
+        frame : np.ndarray
+            Frame BGR da processare.
+
+        Returns
+        -------
+        np.ndarray
+            Frame con undistortion applicata, oppure il frame originale.
+        """
+        if self.enabled and self.undist_map1 is not None:
+            import cv2
+
+            return cv2.remap(frame, self.undist_map1, self.undist_map2, cv2.INTER_LINEAR)
+        return frame
 
 
 @dataclass
@@ -96,5 +140,7 @@ __all__ = [
     "VideoMeta",
     "PipelineResult",
     "FrameProcessors",
+    "FrameDetectionResult",
+    "FisheyeContext",
     "PipelineContext",
 ]

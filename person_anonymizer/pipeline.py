@@ -10,6 +10,7 @@ from ultralytics import YOLO
 
 from .config import VERSION, SUPPORTED_EXTENSIONS, PipelineConfig
 from .models import (
+    FisheyeContext,
     OutputPaths,
     VideoMeta,
     PipelineResult,
@@ -109,9 +110,6 @@ def run_pipeline(ctx: PipelineContext, config=None):
     elif frame_h >= 480:
         res_label = "480p"
 
-    fisheye_enabled = config.enable_fisheye_correction and not (
-        config.camera_matrix is None or config.dist_coefficients is None
-    )
     do_interpolation = config.enable_subframe_interpolation and should_interpolate(
         fps, config.interpolation_fps_threshold
     )
@@ -149,7 +147,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
         else "disabilitato"
     )
     print(f"Sliding window: {sw_status}")
-    print(f"Fish-eye:       {'abilitato' if fisheye_enabled else 'disabilitato'}")
+    print(f"Fish-eye:       {'abilitato' if fisheye.enabled else 'disabilitato'}")
     print(
         f"Tracking:       ByteTrack (max_age: {config.track_max_age})"
         if config.enable_tracking
@@ -171,11 +169,16 @@ def run_pipeline(ctx: PipelineContext, config=None):
     print(f"\nCaricamento modello {config.yolo_model}...")
     model = YOLO(config.yolo_model)
 
-    undist_map1, undist_map2 = None, None
-    if fisheye_enabled:
+    fisheye = FisheyeContext()
+    if (
+        config.enable_fisheye_correction
+        and config.camera_matrix is not None
+        and config.dist_coefficients is not None
+    ):
         undist_map1, undist_map2 = build_undistortion_maps(
             config.camera_matrix, config.dist_coefficients, frame_w, frame_h
         )
+        fisheye = FisheyeContext(enabled=True, undist_map1=undist_map1, undist_map2=undist_map2)
 
     report_data = {}
     review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}

@@ -442,7 +442,7 @@ class TestAnnotationValidation:
 
     def test_valid_annotation_payload(self):
         # Arrange
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         payload = {"auto": [[[0, 0], [10, 0], [10, 10]]], "manual": []}
 
@@ -455,7 +455,7 @@ class TestAnnotationValidation:
 
     def test_invalid_annotation_not_dict(self):
         # Arrange
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         # Act
         valid, msg = _validate_annotation_frame([1, 2, 3])
@@ -466,7 +466,7 @@ class TestAnnotationValidation:
 
     def test_invalid_annotation_auto_not_list(self):
         # Arrange
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         # Act
         valid, msg = _validate_annotation_frame({"auto": "not_a_list", "manual": []})
@@ -477,7 +477,7 @@ class TestAnnotationValidation:
 
     def test_invalid_annotation_polygon_too_few_points(self):
         # Arrange — poligono con solo 2 punti (minimo 3)
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         # Act
         valid, msg = _validate_annotation_frame({"auto": [[[0, 0], [10, 10]]], "manual": []})
@@ -488,7 +488,7 @@ class TestAnnotationValidation:
 
     def test_invalid_annotation_point_not_pair(self):
         # Arrange — punto con 3 coordinate invece di 2
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         # Act
         valid, msg = _validate_annotation_frame(
@@ -501,7 +501,7 @@ class TestAnnotationValidation:
 
     def test_invalid_annotation_non_numeric_coordinates(self):
         # Arrange — coordinate stringa
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         # Act
         valid, msg = _validate_annotation_frame(
@@ -514,7 +514,7 @@ class TestAnnotationValidation:
 
     def test_valid_annotation_with_float_coordinates(self):
         # Arrange — coordinate float sono valide
-        from web.app import _validate_annotation_frame
+        from person_anonymizer.web.routes_review import _validate_annotation_frame
 
         payload = {"auto": [[[0.5, 1.5], [10.1, 0.2], [10.3, 10.4]]], "manual": []}
 
@@ -545,7 +545,7 @@ class TestSSESubscriberCap:
 
     def test_subscriber_cap_raises_after_limit(self):
         # Arrange
-        from web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+        from person_anonymizer.web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
 
         mgr = SSEManager()
         job_id = "test_job_cap"
@@ -561,7 +561,7 @@ class TestSSESubscriberCap:
 
     def test_subscriber_cap_freed_after_unsubscribe(self):
         # Arrange
-        from web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
+        from person_anonymizer.web.sse_manager import SSEManager, _MAX_SUBSCRIBERS_PER_JOB
 
         mgr = SSEManager()
         job_id = "test_job_free"

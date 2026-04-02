@@ -3,6 +3,7 @@ Gestione Server-Sent Events per il progresso della pipeline.
 Supporta più client connessi allo stesso job.
 """
 
+import queue
 import threading
 from queue import Queue
 
@@ -47,7 +48,7 @@ class SSEManager:
             for q in self._subscribers.get(job_id, []):
                 try:
                     q.put_nowait(event)
-                except Exception:
+                except queue.Full:
                     pass  # Drop event se coda piena (client lento)
 
     def close(self, job_id: str):

@@ -3,139 +3,22 @@ Thread wrapper per eseguire person_anonymizer.run_pipeline() dal web.
 Crea PipelineConfig dai parametri web, cattura stdout/tqdm, invia eventi SSE.
 """
 
-import re
-import sys
 import threading
-import time
 from pathlib import Path
 
-from web.sse_manager import SSEManager
-from web.review_state import ReviewState
-from config import PipelineConfig
-from models import PipelineContext
-from person_anonymizer import PipelineError
+from person_anonymizer.web.sse_manager import SSEManager
+from person_anonymizer.web.review_state import ReviewState
+from person_anonymizer.config import PipelineConfig
+from person_anonymizer.models import PipelineContext, PipelineError
+from person_anonymizer.web.config_validator import (
+    _CONFIG_VALIDATORS,  # noqa: F401
+    _BOOL_FIELDS,  # noqa: F401
+    _ALLOWED_FIELDS,
+    validate_config_params,
+)
+from person_anonymizer.web.output_capture import TqdmCapture, StdoutCapture
 
 __all__ = ["PipelineRunner", "validate_config_params"]
-
-_CONFIG_VALIDATORS = {
-    "operation_mode": lambda v: isinstance(v, str) and v in ("auto", "manual"),
-    "anonymization_method": lambda v: isinstance(v, str) and v in ("pixelation", "blur"),
-    "anonymization_intensity": lambda v: isinstance(v, (int, float)) and 1 <= v <= 100,
-    "person_padding": lambda v: isinstance(v, (int, float)) and 0 <= v <= 200,
-    "detection_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
-    "nms_iou_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
-    "nms_iou_internal": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
-    "yolo_model": lambda v: isinstance(v, str) and v in ("yolov8x.pt", "yolov8n.pt"),
-    "sliding_window_grid": lambda v: isinstance(v, int) and 1 <= v <= 10,
-    "sliding_window_overlap": lambda v: isinstance(v, (int, float)) and 0.0 <= v <= 0.9,
-    "max_refinement_passes": lambda v: isinstance(v, int) and 1 <= v <= 10,
-    "smoothing_alpha": lambda v: isinstance(v, (int, float)) and 0.0 < v <= 1.0,
-    "ghost_frames": lambda v: isinstance(v, int) and 0 <= v <= 120,
-    "ghost_expansion": lambda v: isinstance(v, (int, float)) and 1.0 <= v <= 2.0,
-    "track_max_age": lambda v: isinstance(v, int) and 1 <= v <= 300,
-    "track_match_thresh": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
-    "adaptive_reference_height": lambda v: isinstance(v, int) and 10 <= v <= 500,
-    "post_render_check_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
-    "refinement_overlap_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
-    "edge_padding_multiplier": lambda v: isinstance(v, (int, float)) and 1.0 <= v <= 5.0,
-    "edge_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 0.5,
-    "motion_threshold": lambda v: isinstance(v, int) and 1 <= v <= 255,
-    "motion_min_area": lambda v: isinstance(v, int) and 1 <= v <= 100000,
-    "motion_padding": lambda v: isinstance(v, int) and 0 <= v <= 500,
-    "quality_clahe_clip": lambda v: isinstance(v, (int, float)) and 0.1 <= v <= 10.0,
-    "quality_darkness_threshold": lambda v: isinstance(v, int) and 0 <= v <= 255,
-    "interpolation_fps_threshold": lambda v: isinstance(v, int) and 1 <= v <= 120,
-    "inference_scales": lambda v: isinstance(v, list)
-    and all(isinstance(s, (int, float)) and 0.5 <= s <= 5.0 for s in v)
-    and 1 <= len(v) <= 10,
-    "tta_augmentations": lambda v: isinstance(v, list)
-    and all(isinstance(a, str) and a in ("flip_h",) for a in v),
-    "quality_clahe_grid": lambda v: isinstance(v, (list, tuple))
-    and len(v) == 2
-    and all(isinstance(x, int) and 1 <= x <= 32 for x in v),
-}
-
-# Campi booleani: accettano solo bool
-_BOOL_FIELDS = {
-    "enable_fisheye_correction",
-    "enable_motion_detection",
-    "enable_sliding_window",
-    "enable_tracking",
-    "enable_temporal_smoothing",
-    "enable_adaptive_intensity",
-    "enable_subframe_interpolation",
-    "enable_post_render_check",
-    "enable_debug_video",
-    "enable_confidence_report",
-}
-
-# Campi ammessi nella costruzione di PipelineConfig dalla web form
-_ALLOWED_FIELDS = {
-    "operation_mode",
-    "anonymization_method",
-    "anonymization_intensity",
-    "person_padding",
-    "detection_confidence",
-    "nms_iou_threshold",
-    "yolo_model",
-    "enable_fisheye_correction",
-    "enable_motion_detection",
-    "motion_threshold",
-    "motion_min_area",
-    "motion_padding",
-    "enable_sliding_window",
-    "sliding_window_grid",
-    "sliding_window_overlap",
-    "inference_scales",
-    "tta_augmentations",
-    "quality_clahe_clip",
-    "quality_clahe_grid",
-    "quality_darkness_threshold",
-    "enable_tracking",
-    "track_max_age",
-    "track_match_thresh",
-    "enable_temporal_smoothing",
-    "smoothing_alpha",
-    "ghost_frames",
-    "ghost_expansion",
-    "enable_adaptive_intensity",
-    "adaptive_reference_height",
-    "enable_subframe_interpolation",
-    "interpolation_fps_threshold",
-    "enable_post_render_check",
-    "post_render_check_confidence",
-    "max_refinement_passes",
-    "refinement_overlap_threshold",
-    "enable_debug_video",
-    "enable_confidence_report",
-    "edge_padding_multiplier",
-    "edge_threshold",
-    "nms_iou_internal",
-}
-
-
-def validate_config_params(web_config: dict) -> tuple[bool, str]:
-    """
-    Valida i parametri di configurazione prima di applicarli.
-
-    Parameters
-    ----------
-    web_config : dict
-        Parametri dalla form web.
-
-    Returns
-    -------
-    tuple[bool, str]
-        (True, "") se valido, (False, messaggio_errore) altrimenti.
-    """
-    for key, value in web_config.items():
-        if key in _BOOL_FIELDS:
-            if not isinstance(value, bool):
-                return False, f"Parametro '{key}' deve essere booleano"
-        elif key in _CONFIG_VALIDATORS:
-            if not _CONFIG_VALIDATORS[key](value):
-                return False, f"Parametro '{key}' non valido: {value!r}"
-    return True, ""
 
 
 def _build_config(web_config: dict) -> PipelineConfig:
@@ -168,147 +51,6 @@ def _build_config(web_config: dict) -> PipelineConfig:
                 val = tuple(val)
             kwargs[key] = val
     return PipelineConfig(**kwargs)
-
-
-class TqdmCapture:
-    """Monkey-patch tqdm per catturare il progresso ed emetterlo via SSE."""
-
-    def __init__(self, sse: SSEManager, job_id: str):
-        self._sse = sse
-        self._job_id = job_id
-        self._original_tqdm = None
-
-    def install(self):
-        """Installa il patch su tqdm (nel modulo tqdm e in pipeline_stages)."""
-        import tqdm as tqdm_module
-        import pipeline_stages as pa_stages
-
-        self._original_tqdm = tqdm_module.tqdm
-
-        sse = self._sse
-        job_id = self._job_id
-
-        class PatchedTqdm(self._original_tqdm):
-            def __init__(self, *a, **kw):
-                super().__init__(*a, **kw)
-                self._sse = sse
-                self._job_id = job_id
-                self._last_emit = 0
-                # Emetti evento inizio fase
-                desc = self.desc or ""
-                sse.emit(
-                    job_id,
-                    "phase",
-                    {
-                        "description": desc,
-                        "total": self.total or 0,
-                    },
-                )
-
-            def update(self, n=1):
-                super().update(n)
-                now = time.monotonic()
-                # Rate-limit: emetti max ogni 0.25s
-                if now - self._last_emit >= 0.25:
-                    self._last_emit = now
-                    rate = self.format_dict.get("rate", 0) or 0
-                    elapsed = self.format_dict.get("elapsed", 0) or 0
-                    self._sse.emit(
-                        self._job_id,
-                        "progress",
-                        {
-                            "current": self.n,
-                            "total": self.total or 0,
-                            "description": self.desc or "",
-                            "rate": round(rate, 2),
-                            "elapsed": round(elapsed, 1),
-                        },
-                    )
-
-            def close(self):
-                # Emetti progresso finale
-                self._sse.emit(
-                    self._job_id,
-                    "progress",
-                    {
-                        "current": self.total or self.n,
-                        "total": self.total or self.n,
-                        "description": self.desc or "",
-                        "rate": 0,
-                        "elapsed": 0,
-                    },
-                )
-                super().close()
-
-        # Patcha sia il modulo tqdm che il riferimento in pipeline_stages
-        tqdm_module.tqdm = PatchedTqdm
-        pa_stages.tqdm = PatchedTqdm
-
-    def uninstall(self):
-        """Ripristina tqdm originale."""
-        if self._original_tqdm:
-            import tqdm as tqdm_module
-            import pipeline_stages as pa_stages
-
-            tqdm_module.tqdm = self._original_tqdm
-            pa_stages.tqdm = self._original_tqdm
-
-
-class StdoutCapture:
-    """Cattura stdout e invia le righe come eventi SSE 'log'."""
-
-    _PATH_RE = re.compile(r"/[^\s]*/(uploads|outputs)/[^\s]+")
-    _PHASE_RE = re.compile(r"\[FASE (\d)/5\]")
-
-    def __init__(self, sse: SSEManager, job_id: str):
-        self._sse = sse
-        self._job_id = job_id
-        self._original = None
-        self._buffer = ""
-
-    @classmethod
-    def _sanitize_message(cls, msg: str) -> str:
-        """Rimuove path assoluti dai messaggi di log inviati al client."""
-        return cls._PATH_RE.sub("[FILE]", msg)
-
-    def install(self):
-        self._original = sys.stdout
-        sys.stdout = self
-
-    def uninstall(self):
-        if self._original:
-            # Emetti eventuale testo residuo nel buffer
-            if self._buffer.strip():
-                sanitized = self._sanitize_message(self._buffer.strip())
-                self._sse.emit(self._job_id, "log", {"message": sanitized})
-                self._buffer = ""
-            sys.stdout = self._original
-
-    def write(self, text):
-        if self._original:
-            self._original.write(text)
-        self._buffer += text
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            line = line.strip()
-            if line:
-                sanitized = self._sanitize_message(line)
-                # Detecta fasi dalla stampa
-                phase_match = self._PHASE_RE.match(sanitized)
-                if phase_match:
-                    self._sse.emit(
-                        self._job_id,
-                        "phase_label",
-                        {
-                            "phase": int(phase_match.group(1)),
-                            "label": sanitized,
-                        },
-                    )
-                self._sse.emit(self._job_id, "log", {"message": sanitized})
-
-    def flush(self):
-        if self._original:
-            self._original.flush()
 
 
 class PipelineRunner:
@@ -364,7 +106,7 @@ class PipelineRunner:
         """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
         import logging
         import person_anonymizer as pa
-        from pipeline import run_pipeline
+        from person_anonymizer.pipeline import run_pipeline
 
         _log = logging.getLogger(__name__)
 

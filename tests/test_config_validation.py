@@ -195,7 +195,7 @@ class TestBuildConfigIntegration:
         config = _build_config({})
 
         # Verifica che sia un PipelineConfig con i default
-        from config import PipelineConfig
+        from person_anonymizer.config import PipelineConfig
 
         default = PipelineConfig()
         assert config.detection_confidence == default.detection_confidence
