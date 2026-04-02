@@ -124,6 +124,15 @@
             <div id="section-detection" class="card-body">
 
                 <div class="form-group">
+                    <label for="detection_backend"><span data-i18n="detection.backend.label">Backend rilevamento</span> <button type="button" class="help-btn" data-help="YOLO: default, funziona su qualsiasi GPU. YOLO+SAM3: YOLO per detection + SAM3 per segmentazione precisa (richiede 8GB VRAM). SAM3: detection e tracking completo via SAM3 (richiede 16GB VRAM e installazione separata)." data-i18n-help="detection.backend.help" aria-label="Aiuto: Backend rilevamento" data-i18n-aria="detection.backend.aria">?</button></label>
+                    <select id="detection_backend">
+                        <option value="yolo" data-i18n="detection.backend.opt.yolo">YOLO (default)</option>
+                        <option value="yolo+sam3" data-i18n="detection.backend.opt.hybrid">YOLO + SAM3 (ibrido)</option>
+                        <option value="sam3" data-i18n="detection.backend.opt.sam3">SAM3 completo</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="yolo-model-group">
                     <label for="yolo_model"><span data-i18n="detection.model.label">Modello YOLO</span> <button type="button" class="help-btn" data-help="YOLOv8x: più accurato ma più lento, consigliato per persone piccole o distanti. YOLOv8n: molto più veloce, adatto per persone ben visibili." data-i18n-help="detection.model.help" aria-label="Aiuto: Modello YOLO" data-i18n-aria="detection.model.aria">?</button></label>
                     <select id="yolo_model">
                         <option value="yolov8x.pt" data-i18n="detection.model.opt.x">YOLOv8x (accurato, lento)</option>

@@ -238,3 +238,51 @@ class TestPipelineConfigValidation:
         )
         # Assert
         assert config.detection_confidence == 0.01
+
+
+class TestPipelineConfigSam3Fields:
+    """Test per i campi SAM3 aggiunti a PipelineConfig."""
+
+    def test_default_detection_backend_is_yolo(self):
+        config = PipelineConfig()
+        assert config.detection_backend == "yolo"
+
+    def test_default_sam3_model(self):
+        config = PipelineConfig()
+        assert config.sam3_model == "sam3_hiera_large.pt"
+
+    def test_default_sam3_text_prompt(self):
+        config = PipelineConfig()
+        assert config.sam3_text_prompt == "person"
+
+    def test_default_sam3_mask_simplify_epsilon(self):
+        config = PipelineConfig()
+        assert 0.0 < config.sam3_mask_simplify_epsilon < 1.0
+
+    def test_default_sam3_min_mask_area(self):
+        config = PipelineConfig()
+        assert config.sam3_min_mask_area >= 1
+
+    def test_custom_detection_backend_yolo_sam3(self):
+        config = PipelineConfig(detection_backend="yolo+sam3")
+        assert config.detection_backend == "yolo+sam3"
+
+    def test_custom_detection_backend_sam3(self):
+        config = PipelineConfig(detection_backend="sam3")
+        assert config.detection_backend == "sam3"
+
+    def test_invalid_detection_backend_raises(self):
+        with pytest.raises(ValueError, match="detection_backend"):
+            PipelineConfig(detection_backend="invalid")
+
+    def test_invalid_sam3_min_mask_area_zero(self):
+        with pytest.raises(ValueError, match="sam3_min_mask_area"):
+            PipelineConfig(sam3_min_mask_area=0)
+
+    def test_invalid_sam3_mask_simplify_epsilon_zero(self):
+        with pytest.raises(ValueError, match="sam3_mask_simplify_epsilon"):
+            PipelineConfig(sam3_mask_simplify_epsilon=0.0)
+
+    def test_invalid_sam3_mask_simplify_epsilon_one(self):
+        with pytest.raises(ValueError, match="sam3_mask_simplify_epsilon"):
+            PipelineConfig(sam3_mask_simplify_epsilon=1.0)

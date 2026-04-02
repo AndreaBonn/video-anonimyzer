@@ -118,6 +118,27 @@ class TestParseArgs:
         assert args.no_report is False
         assert args.review is None
         assert args.normalize is False
+        assert args.backend == "yolo"
+
+    def test_parses_backend_yolo(self):
+        with patch("sys.argv", ["cli", "video.mp4", "--backend", "yolo"]):
+            args = parse_args()
+        assert args.backend == "yolo"
+
+    def test_parses_backend_yolo_sam3(self):
+        with patch("sys.argv", ["cli", "video.mp4", "--backend", "yolo+sam3"]):
+            args = parse_args()
+        assert args.backend == "yolo+sam3"
+
+    def test_parses_backend_sam3(self):
+        with patch("sys.argv", ["cli", "video.mp4", "--backend", "sam3"]):
+            args = parse_args()
+        assert args.backend == "sam3"
+
+    def test_rejects_invalid_backend(self):
+        with pytest.raises(SystemExit):
+            with patch("sys.argv", ["cli", "video.mp4", "--backend", "invalid"]):
+                parse_args()
 
 
 class TestMain:
@@ -163,3 +184,14 @@ class TestMain:
         assert ctx.input == "video.mp4"
         assert ctx.mode == "auto"
         assert ctx.method == "blur"
+
+    @patch("person_anonymizer.pipeline.run_pipeline")
+    def test_main_passes_backend_to_config(self, mock_run):
+        # Arrange / Act
+        with patch("sys.argv", ["cli", "video.mp4", "--backend", "yolo+sam3"]):
+            main()
+
+        # Assert
+        mock_run.assert_called_once()
+        config = mock_run.call_args[1].get("config") or mock_run.call_args[0][1]
+        assert config.detection_backend == "yolo+sam3"

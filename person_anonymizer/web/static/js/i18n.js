@@ -78,6 +78,15 @@ const I18n = (function () {
 
         // --- Rilevamento ---
         "detection.title": { it: "Rilevamento", en: "Detection" },
+        "detection.backend.label": { it: "Backend rilevamento", en: "Detection backend" },
+        "detection.backend.help": {
+            it: "YOLO: default, funziona su qualsiasi GPU. YOLO+SAM3: YOLO per detection + SAM3 per segmentazione precisa (richiede 8GB VRAM). SAM3: detection e tracking completo via SAM3 (richiede 16GB VRAM e installazione separata).",
+            en: "YOLO: default, works on any GPU. YOLO+SAM3: YOLO for detection + SAM3 for precise segmentation (requires 8GB VRAM). SAM3: full detection and tracking via SAM3 (requires 16GB VRAM and separate installation).",
+        },
+        "detection.backend.aria": { it: "Aiuto: Backend rilevamento", en: "Help: Detection backend" },
+        "detection.backend.opt.yolo": { it: "YOLO (default)", en: "YOLO (default)" },
+        "detection.backend.opt.hybrid": { it: "YOLO + SAM3 (ibrido)", en: "YOLO + SAM3 (hybrid)" },
+        "detection.backend.opt.sam3": { it: "SAM3 completo", en: "SAM3 full" },
         "detection.model.label": { it: "Modello YOLO", en: "YOLO Model" },
         "detection.model.help": {
             it: "YOLOv8x: pi\u00f9 accurato ma pi\u00f9 lento, consigliato per persone piccole o distanti. YOLOv8n: molto pi\u00f9 veloce, adatto per persone ben visibili.",

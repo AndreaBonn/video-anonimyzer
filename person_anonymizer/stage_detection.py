@@ -118,17 +118,34 @@ def _process_single_frame(frame, model, config, frame_w, frame_h, proc, prev_int
     )
 
     frame_polygons, frame_intensities, active_ids = [], [], set()
+
+    # Raccogli box smoothed per eventuale SAM3 refinement
+    smoothed_boxes = []
     for tid, x1, y1, x2, y2, conf in tracked:
         active_ids.add(tid)
         if config.enable_temporal_smoothing and proc.smoother:
             x1, y1, x2, y2 = proc.smoother.smooth(tid, x1, y1, x2, y2)
         x1, y1, x2, y2 = max(0, x1), max(0, y1), min(frame_w, x2), min(frame_h, y2)
-        box_h = y2 - y1
-        intensity = resolve_intensity(config, box_h)
-        frame_polygons.append(
-            box_to_polygon(x1, y1, x2, y2, config.person_padding, frame_w, frame_h, config=config)
-        )
-        frame_intensities.append(intensity)
+        smoothed_boxes.append((x1, y1, x2, y2))
+
+    # Se SAM3 refiner è attivo, affina tutti i box in un batch
+    if proc.sam3_refiner is not None and smoothed_boxes:
+        sam3_polygons = proc.sam3_refiner.refine_boxes(frame, smoothed_boxes)
+        for poly, (x1, y1, x2, y2) in zip(sam3_polygons, smoothed_boxes):
+            box_h = y2 - y1
+            intensity = resolve_intensity(config, box_h)
+            frame_polygons.append(poly)
+            frame_intensities.append(intensity)
+    else:
+        for x1, y1, x2, y2 in smoothed_boxes:
+            box_h = y2 - y1
+            intensity = resolve_intensity(config, box_h)
+            frame_polygons.append(
+                box_to_polygon(
+                    x1, y1, x2, y2, config.person_padding, frame_w, frame_h, config=config
+                )
+            )
+            frame_intensities.append(intensity)
 
     if proc.smoother:
         proc.smoother.clear_stale(active_ids)
@@ -157,7 +174,9 @@ def _process_single_frame(frame, model, config, frame_w, frame_h, proc, prev_int
     )
 
 
-def run_detection_loop(cap, total_frames, model, config, fisheye, stop_event=None):
+def run_detection_loop(
+    cap, total_frames, model, config, fisheye, stop_event=None, sam3_refiner=None
+):
     """Loop di detection frame-per-frame.
 
     Parameters
@@ -174,6 +193,8 @@ def run_detection_loop(cap, total_frames, model, config, fisheye, stop_event=Non
         Contesto di correzione fish-eye.
     stop_event : threading.Event | None
         Evento di stop per interruzione asincrona.
+    sam3_refiner : Sam3ImageRefiner | None
+        Refiner SAM3 per modalità ``yolo+sam3``. Se None, usa ``box_to_polygon``.
 
     Returns
     -------
@@ -185,6 +206,7 @@ def run_detection_loop(cap, total_frames, model, config, fisheye, stop_event=Non
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
 
     proc = _init_frame_processors(fps, frame_w, frame_h, config)
+    proc.sam3_refiner = sam3_refiner
 
     annotations, report_data = {}, {}
     unique_ids, total_instances, frames_zero_det, all_confs, corrupted = set(), 0, 0, [], []

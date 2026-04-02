@@ -71,6 +71,7 @@ class FrameProcessors:
     tracker: object = None  # BYTETracker (no type stub disponibile)
     smoother: TemporalSmoother | None = None
     do_interpolation: bool = False
+    sam3_refiner: object = None  # Sam3ImageRefiner | None
 
 
 @dataclass
