@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "person-anonymizer"
 dynamic = ["version"]
 description = "Tool di anonimizzazione persone in video di sorveglianza"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "ultralytics==8.4.21",
     "opencv-python==4.13.0.92",
@@ -28,7 +28,7 @@ version = {attr = "person_anonymizer.config.VERSION"}
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
