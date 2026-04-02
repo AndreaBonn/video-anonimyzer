@@ -25,9 +25,7 @@ class ReviewState:
         self._frame_w = 0
         self._frame_h = 0
         self._fps = 0.0
-        self._fisheye_enabled = False
-        self._undist_map1 = None
-        self._undist_map2 = None
+        self._fisheye = None
         self._cap = None
 
     @property
@@ -35,18 +33,7 @@ class ReviewState:
         with self._lock:
             return self._active
 
-    def setup(
-        self,
-        video_path,
-        annotations,
-        total_frames,
-        frame_w,
-        frame_h,
-        fps,
-        fisheye_enabled=False,
-        undist_map1=None,
-        undist_map2=None,
-    ):
+    def setup(self, video_path, annotations, total_frames, frame_w, frame_h, fps, fisheye=None):
         """Chiamato dal pipeline thread quando le annotazioni sono pronte.
 
         Parameters
@@ -63,13 +50,11 @@ class ReviewState:
             Altezza frame in pixel.
         fps : float
             Frame per secondo del video.
-        fisheye_enabled : bool
-            Se la correzione fisheye è attiva.
-        undist_map1 : numpy.ndarray or None
-            Mappa di undistortion 1.
-        undist_map2 : numpy.ndarray or None
-            Mappa di undistortion 2.
+        fisheye : FisheyeContext or None
+            Contesto di correzione fish-eye.
         """
+        from person_anonymizer.models import FisheyeContext
+
         with self._lock:
             self._video_path = video_path
             self._annotations = copy.deepcopy(annotations)
@@ -77,9 +62,7 @@ class ReviewState:
             self._frame_w = frame_w
             self._frame_h = frame_h
             self._fps = fps
-            self._fisheye_enabled = fisheye_enabled
-            self._undist_map1 = undist_map1
-            self._undist_map2 = undist_map2
+            self._fisheye = fisheye or FisheyeContext()
             if self._cap is not None:
                 self._cap.release()
                 self._cap = None
@@ -147,12 +130,9 @@ class ReviewState:
             ret, frame = self._cap.read()
             if not ret:
                 return None, 1.0
-            fisheye = self._fisheye_enabled
-            map1 = self._undist_map1
-            map2 = self._undist_map2
+            fisheye = self._fisheye
 
-        if fisheye and map1 is not None and map2 is not None:
-            frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
+        frame = fisheye.undistort(frame)
 
         h, w = frame.shape[:2]
         scale = 1.0

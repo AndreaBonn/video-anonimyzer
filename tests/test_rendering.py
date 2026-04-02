@@ -13,6 +13,7 @@ import pytest
 
 from person_anonymizer.rendering import render_video, compute_review_stats
 from person_anonymizer.config import PipelineConfig
+from person_anonymizer.models import FisheyeContext
 
 
 class TestComputeReviewStats:
@@ -130,9 +131,7 @@ class TestRenderVideo:
                 20,
                 20,
                 "pixelation",
-                False,
-                None,
-                None,
+                FisheyeContext(),
                 config,
             )
 
@@ -176,9 +175,7 @@ class TestRenderVideo:
                 20,
                 20,
                 "pixelation",
-                False,
-                None,
-                None,
+                FisheyeContext(),
                 config,
             )
 
@@ -215,9 +212,7 @@ class TestRenderVideo:
                 20,
                 20,
                 "pixelation",
-                False,
-                None,
-                None,
+                FisheyeContext(),
                 config,
                 debug_path=debug_path,
             )

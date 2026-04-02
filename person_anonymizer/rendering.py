@@ -13,7 +13,6 @@ from tqdm import tqdm
 
 from .anonymization import draw_debug_polygons, obscure_polygon
 from .config import PipelineConfig
-from .preprocessing import undistort_frame
 
 _log = logging.getLogger(__name__)
 
@@ -28,9 +27,7 @@ def render_video(
     frame_w,
     frame_h,
     method,
-    fisheye_enabled,
-    undist_map1,
-    undist_map2,
+    fisheye,
     config: PipelineConfig,
     debug_path=None,
     desc="Rendering",
@@ -55,12 +52,8 @@ def render_video(
         Altezza frame.
     method : str
         Metodo di oscuramento ("pixelation" o "blur").
-    fisheye_enabled : bool
-        Se True, applica correzione fish-eye.
-    undist_map1 : ndarray or None
-        Mappa undistortion 1.
-    undist_map2 : ndarray or None
-        Mappa undistortion 2.
+    fisheye : FisheyeContext
+        Contesto di correzione fish-eye.
     config : PipelineConfig
         Configurazione della pipeline (intensità oscuramento, adaptive mode).
     debug_path : str or None
@@ -102,8 +95,7 @@ def render_video(
                     continue
                 break
 
-            if fisheye_enabled:
-                frame = undistort_frame(frame, undist_map1, undist_map2)
+            frame = fisheye.undistort(frame)
 
             render_frame = frame.copy()
             ann = annotations.get(frame_idx, {"auto": [], "manual": [], "intensities": []})

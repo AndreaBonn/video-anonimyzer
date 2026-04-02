@@ -10,6 +10,7 @@ import numpy as np
 from copy import deepcopy
 
 from .config import PipelineConfig
+from .models import FisheyeContext
 
 __all__ = ["ManualReviewer", "run_manual_review"]
 
@@ -26,15 +27,7 @@ KEY_NONE = 255
 class ManualReviewer:
     """Interfaccia interattiva OpenCV per revisione poligoni di oscuramento."""
 
-    def __init__(
-        self,
-        video_path,
-        auto_annotations,
-        config,
-        fisheye_enabled=False,
-        undist_map1=None,
-        undist_map2=None,
-    ):
+    def __init__(self, video_path, auto_annotations, config, fisheye=None):
         # Copia annotazioni
         self.annotations = deepcopy(auto_annotations)
 
@@ -47,9 +40,7 @@ class ManualReviewer:
 
         # Video
         self.cap = cv2.VideoCapture(video_path)
-        self.fisheye_enabled = fisheye_enabled
-        self.undist_map1 = undist_map1
-        self.undist_map2 = undist_map2
+        self.fisheye = fisheye or FisheyeContext()
 
         # Metadata video
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -115,8 +106,7 @@ class ManualReviewer:
                 2,
             )
 
-        if self.fisheye_enabled and self.undist_map1 is not None:
-            frame = cv2.remap(frame, self.undist_map1, self.undist_map2, cv2.INTER_LINEAR)
+        frame = self.fisheye.undistort(frame)
 
         self._cached_frame = frame.copy()
         self._cached_frame_idx = idx
@@ -442,11 +432,9 @@ class ManualReviewer:
         return self.annotations, self._get_final_stats()
 
 
-def run_manual_review(
-    video_path, auto_annotations, config, fisheye_enabled=False, undist_map1=None, undist_map2=None
-):
+def run_manual_review(video_path, auto_annotations, config, fisheye=None):
     """
-    Backward-compatible wrapper per ManualReviewer.
+    Wrapper per ManualReviewer.
 
     Parameters
     ----------
@@ -456,24 +444,15 @@ def run_manual_review(
         Annotazioni dalla pipeline automatica.
     config : PipelineConfig
         Configurazione della pipeline.
-    fisheye_enabled : bool
-        Se True, applica undistortion ai frame.
-    undist_map1, undist_map2 : ndarray or None
-        Mappe di undistortion.
+    fisheye : FisheyeContext or None
+        Contesto di correzione fish-eye.
 
     Returns
     -------
     tuple (annotations, stats)
         Annotazioni finali e statistiche revisione.
     """
-    reviewer = ManualReviewer(
-        video_path,
-        auto_annotations,
-        config,
-        fisheye_enabled,
-        undist_map1,
-        undist_map2,
-    )
+    reviewer = ManualReviewer(video_path, auto_annotations, config, fisheye)
     if not reviewer.cap.isOpened():
         print("Errore: impossibile aprire il video per la revisione.")
         stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}

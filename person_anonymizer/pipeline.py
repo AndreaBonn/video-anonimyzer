@@ -199,7 +199,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
         cap.release()
     else:
         annotations, report_data, _ = run_detection_loop(
-            cap, total_frames, model, config, fisheye_enabled, undist_map1, undist_map2, stop_event
+            cap, total_frames, model, config, fisheye, stop_event
         )
 
     # ============================================
@@ -215,9 +215,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
             frame_w,
             frame_h,
             method,
-            fisheye_enabled,
-            undist_map1,
-            undist_map2,
+            fisheye,
             report_data,
             temp_video_path,
             stop_event,
@@ -238,9 +236,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
             fps,
             frame_w,
             frame_h,
-            fisheye_enabled,
-            undist_map1,
-            undist_map2,
+            fisheye,
         )
     else:
         print(f"\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
@@ -257,9 +253,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
         frame_w,
         frame_h,
         method,
-        fisheye_enabled,
-        undist_map1,
-        undist_map2,
+        fisheye,
         config,
         debug_path=temp_debug_path if enable_debug else None,
         desc="Rendering finale",
