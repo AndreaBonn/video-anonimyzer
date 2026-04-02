@@ -1,0 +1,4 @@
+# Dipendenze opzionali per backend SAM3
+# Installa con: pip install -r requirements-sam3.txt
+sam3>=1.0.0
+torch>=2.1.0

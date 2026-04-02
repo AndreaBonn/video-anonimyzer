@@ -33,10 +33,17 @@ class PipelineConfig:
     edge_threshold: float = 0.05
 
     # --- Rilevamento ---
+    detection_backend: str = "yolo"
     detection_confidence: float = 0.20
     nms_iou_internal: float = 0.45
     nms_iou_threshold: float = 0.55
     yolo_model: str = "yolov8x.pt"
+
+    # --- SAM3 (opzionale) ---
+    sam3_model: str = "sam3_hiera_large.pt"
+    sam3_text_prompt: str = "person"
+    sam3_mask_simplify_epsilon: float = 0.005
+    sam3_min_mask_area: int = 100
 
     # --- Correzione fish-eye ---
     enable_fisheye_correction: bool = True
@@ -123,6 +130,20 @@ class PipelineConfig:
             raise ValueError(
                 "nms_iou_threshold deve essere tra 0 e 1 (escl.), "
                 f"ricevuto {self.nms_iou_threshold}"
+            )
+        if self.detection_backend not in ("yolo", "yolo+sam3", "sam3"):
+            raise ValueError(
+                "detection_backend deve essere 'yolo', 'yolo+sam3' o 'sam3', "
+                f"ricevuto '{self.detection_backend}'"
+            )
+        if self.sam3_min_mask_area < 1:
+            raise ValueError(
+                f"sam3_min_mask_area deve essere >= 1, ricevuto {self.sam3_min_mask_area}"
+            )
+        if not (0.0 < self.sam3_mask_simplify_epsilon < 1.0):
+            raise ValueError(
+                "sam3_mask_simplify_epsilon deve essere tra 0 e 1 (escl.), "
+                f"ricevuto {self.sam3_mask_simplify_epsilon}"
             )
         if self.operation_mode not in ("manual", "auto"):
             raise ValueError(

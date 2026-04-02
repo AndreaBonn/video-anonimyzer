@@ -6,8 +6,8 @@ import time
 from pathlib import Path
 
 import cv2
-from ultralytics import YOLO
 
+from .backend_factory import load_detection_backend
 from .config import SUPPORTED_EXTENSIONS, VERSION, PipelineConfig
 from .models import (
     FisheyeContext,
@@ -135,6 +135,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
     print(f"Output:         {Path(output_path).name}")
     print(f"Modalità:      {mode}")
     print(f"Metodo:         {method_label}")
+    print(f"Backend:        {config.detection_backend}")
     print(f"Modello:        {config.yolo_model}  |  Confidenza: {config.detection_confidence}")
     print(
         f"Scale:          [{', '.join(f'{s}x' for s in config.inference_scales)}] + "
@@ -167,8 +168,8 @@ def run_pipeline(ctx: PipelineContext, config=None):
     print(f"Interpolazione: {interp_status}")
     print("-" * 40)
 
-    print(f"\nCaricamento modello {config.yolo_model}...")
-    model = YOLO(config.yolo_model)
+    backend = load_detection_backend(config)
+    model = backend.yolo_model
 
     fisheye = FisheyeContext()
     if (
@@ -198,9 +199,20 @@ def run_pipeline(ctx: PipelineContext, config=None):
             print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
             mode = "auto"
         cap.release()
+    elif config.detection_backend == "sam3" and backend.sam3_video_detector is not None:
+        cap.release()
+        annotations, report_data = backend.sam3_video_detector.detect_video(
+            input_path, config, stop_event
+        )
     else:
         annotations, report_data, _ = run_detection_loop(
-            cap, total_frames, model, config, fisheye, stop_event
+            cap,
+            total_frames,
+            model,
+            config,
+            fisheye,
+            stop_event,
+            sam3_refiner=backend.sam3_refiner,
         )
 
     # ============================================

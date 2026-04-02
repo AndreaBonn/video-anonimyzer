@@ -2,8 +2,8 @@
 
 ## Panoramica
 Tool di anonimizzazione persone in video di sorveglianza.
-Pipeline YOLO v8 multi-scala con tracking ByteTrack, temporal smoothing
-e interfaccia web Flask.
+Pipeline multi-backend (YOLO v8 / SAM3) con tracking ByteTrack, temporal smoothing
+e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
 
 ## Struttura
 - `person_anonymizer/` — Package Python installabile (`pip install -e .`)
@@ -12,7 +12,9 @@ e interfaccia web Flask.
   - `models.py` — Dataclass: PipelineContext, OutputPaths, VideoMeta, PipelineResult, FrameProcessors, FrameDetectionResult, FisheyeContext, eccezioni
   - `pipeline.py` — Orchestratore pipeline `run_pipeline()`
   - `pipeline_stages.py` — Re-export delle 3 fasi per backward compatibility
-  - `stage_detection.py` — Detection loop (YOLO + tracking + smoothing)
+  - `sam3_backend.py` — Backend SAM3 opzionale: check, mask_to_polygons, Sam3ImageRefiner, Sam3VideoDetector
+  - `backend_factory.py` — Factory per backend detection (yolo / yolo+sam3 / sam3)
+  - `stage_detection.py` — Detection loop (YOLO + tracking + smoothing, con SAM3 refiner opzionale)
   - `stage_refinement.py` — Auto-refinement loop
   - `stage_review.py` — Revisione manuale (web/CLI)
   - `output.py` — Salvataggio output e caricamento annotazioni JSON
@@ -37,10 +39,11 @@ e interfaccia web Flask.
     - `pipeline_runner.py` — Thread wrapper per run_pipeline
     - `sse_manager.py` — Server-Sent Events manager
     - `review_state.py` — Stato review thread-safe
-- `tests/` — Test suite (pytest, 241 test)
+- `tests/` — Test suite (pytest, 293 test)
 - `reports/` — Report di audit (code roast, security, architecture)
 - `requirements.txt` — Dipendenze produzione pinnate
 - `requirements-dev.txt` — Dipendenze sviluppo (pytest, ruff)
+- `requirements-sam3.txt` — Dipendenze opzionali per backend SAM3
 - `pyproject.toml` — Build system, CLI entry point, ruff, pytest
 - `.env.example` — Variabili d'ambiente di esempio
 - `SECURITY.md` — Documentazione sicurezza

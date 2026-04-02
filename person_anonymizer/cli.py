@@ -58,6 +58,16 @@ def parse_args():
             "le aree sovrapposte. Richiede --review."
         ),
     )
+    parser.add_argument(
+        "--backend",
+        choices=["yolo", "yolo+sam3", "sam3"],
+        default="yolo",
+        help=(
+            "Backend di detection: 'yolo' (default), "
+            "'yolo+sam3' (YOLO + SAM3 refiner), "
+            "'sam3' (SAM3 completo). SAM3 richiede installazione separata."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -75,9 +85,11 @@ def main():
         normalize=args.normalize,
     )
     try:
+        from .config import PipelineConfig
         from .pipeline import run_pipeline
 
-        run_pipeline(ctx)
+        config = PipelineConfig(detection_backend=args.backend)
+        run_pipeline(ctx, config=config)
     except PipelineInputError as e:
         print(f"\nErrore: {e}")
         sys.exit(1)

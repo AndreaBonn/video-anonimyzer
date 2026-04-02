@@ -102,6 +102,54 @@ class TestValidateConfigRejectsAttacks:
 
         assert valid is False
 
+    def test_rejects_sam3_model_path_traversal(self):
+        # Path traversal su sam3_model — tentativo di caricare file arbitrario
+        valid, msg = validate_config_params({"sam3_model": "../../etc/passwd"})
+
+        assert valid is False
+        assert "sam3_model" in msg
+
+    def test_rejects_sam3_model_absolute_path(self):
+        valid, msg = validate_config_params({"sam3_model": "/tmp/evil.pt"})
+
+        assert valid is False
+
+    def test_rejects_sam3_model_without_pt_extension(self):
+        valid, msg = validate_config_params({"sam3_model": "model.bin"})
+
+        assert valid is False
+
+    def test_rejects_sam3_text_prompt_with_special_chars(self):
+        # Prompt con caratteri speciali — potenziale prompt injection
+        valid, msg = validate_config_params({"sam3_text_prompt": "person; rm -rf /"})
+
+        assert valid is False
+
+    def test_rejects_sam3_text_prompt_empty(self):
+        valid, msg = validate_config_params({"sam3_text_prompt": ""})
+
+        assert valid is False
+
+    def test_rejects_sam3_text_prompt_too_long(self):
+        valid, msg = validate_config_params({"sam3_text_prompt": "a" * 101})
+
+        assert valid is False
+
+    def test_rejects_invalid_detection_backend(self):
+        valid, msg = validate_config_params({"detection_backend": "tensorflow"})
+
+        assert valid is False
+
+    def test_rejects_sam3_min_mask_area_zero(self):
+        valid, msg = validate_config_params({"sam3_min_mask_area": 0})
+
+        assert valid is False
+
+    def test_rejects_sam3_epsilon_out_of_range(self):
+        valid, msg = validate_config_params({"sam3_mask_simplify_epsilon": 1.5})
+
+        assert valid is False
+
 
 # ============================================================
 # validate_config_params — input validi
@@ -131,6 +179,30 @@ class TestValidateConfigAcceptsValid:
     def test_accepts_boolean_true(self):
         valid, msg = validate_config_params({"enable_tracking": True})
 
+        assert valid is True
+
+    def test_accepts_valid_sam3_model(self):
+        valid, msg = validate_config_params({"sam3_model": "sam3_hiera_large.pt"})
+        assert valid is True
+
+    def test_accepts_valid_sam3_text_prompt(self):
+        valid, msg = validate_config_params({"sam3_text_prompt": "person"})
+        assert valid is True
+
+    def test_accepts_valid_detection_backend_yolo_sam3(self):
+        valid, msg = validate_config_params({"detection_backend": "yolo+sam3"})
+        assert valid is True
+
+    def test_accepts_valid_detection_backend_sam3(self):
+        valid, msg = validate_config_params({"detection_backend": "sam3"})
+        assert valid is True
+
+    def test_accepts_valid_sam3_epsilon(self):
+        valid, msg = validate_config_params({"sam3_mask_simplify_epsilon": 0.005})
+        assert valid is True
+
+    def test_accepts_valid_sam3_min_mask_area(self):
+        valid, msg = validate_config_params({"sam3_min_mask_area": 100})
         assert valid is True
 
     def test_accepts_valid_complete_config(self):

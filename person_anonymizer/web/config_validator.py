@@ -1,5 +1,8 @@
 """Validatori di configurazione per i parametri della web form."""
 
+import os
+import re
+
 __all__ = [
     "_CONFIG_VALIDATORS",
     "_BOOL_FIELDS",
@@ -15,7 +18,16 @@ _CONFIG_VALIDATORS = {
     "detection_confidence": lambda v: isinstance(v, (int, float)) and 0.01 <= v <= 0.99,
     "nms_iou_threshold": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
     "nms_iou_internal": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "detection_backend": lambda v: isinstance(v, str) and v in ("yolo", "yolo+sam3", "sam3"),
     "yolo_model": lambda v: isinstance(v, str) and v in ("yolov8x.pt", "yolov8n.pt"),
+    "sam3_model": lambda v: (
+        isinstance(v, str) and len(v) > 0 and os.path.basename(v) == v and v.endswith(".pt")
+    ),
+    "sam3_text_prompt": lambda v: (
+        isinstance(v, str) and 0 < len(v) <= 100 and bool(re.match(r"^[a-zA-Z0-9 _-]+$", v))
+    ),
+    "sam3_mask_simplify_epsilon": lambda v: isinstance(v, (int, float)) and 0.0 < v < 1.0,
+    "sam3_min_mask_area": lambda v: isinstance(v, int) and v >= 1,
     "sliding_window_grid": lambda v: isinstance(v, int) and 1 <= v <= 10,
     "sliding_window_overlap": lambda v: isinstance(v, (int, float)) and 0.0 <= v <= 0.9,
     "max_refinement_passes": lambda v: isinstance(v, int) and 1 <= v <= 10,
@@ -101,6 +113,11 @@ _ALLOWED_FIELDS = {
     "edge_padding_multiplier",
     "edge_threshold",
     "nms_iou_internal",
+    "detection_backend",
+    "sam3_model",
+    "sam3_text_prompt",
+    "sam3_mask_simplify_epsilon",
+    "sam3_min_mask_area",
 }
 
 

@@ -17,6 +17,9 @@ dependencies = [
     "tqdm==4.67.3",
 ]
 
+[project.optional-dependencies]
+sam3 = ["sam3>=1.0.0", "torch>=2.1.0"]
+
 [project.scripts]
 person-anonymizer = "person_anonymizer.cli:main"
 
