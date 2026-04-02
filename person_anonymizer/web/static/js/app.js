@@ -415,6 +415,7 @@
             anonymization_method: getRadio("anonymization_method"),
             anonymization_intensity: getVal("anonymization_intensity"),
             person_padding: getVal("person_padding"),
+            detection_backend: getVal("detection_backend"),
             detection_confidence: getVal("detection_confidence"),
             nms_iou_threshold: getVal("nms_iou_threshold"),
             yolo_model: getVal("yolo_model"),
