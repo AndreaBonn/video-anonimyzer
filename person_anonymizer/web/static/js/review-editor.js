@@ -371,11 +371,11 @@ const ReviewEditor = (function () {
     // ============================
     function updateInfoBar() {
         if (!metadata) return;
-        frameLabel.textContent = "Frame " + currentFrame + " / " + (metadata.total_frames - 1);
+        frameLabel.textContent = I18n.t("review.frame", currentFrame, metadata.total_frames - 1);
 
         const fdata = getFrameAnnotations(currentFrame);
         const count = (fdata.auto || []).length + (fdata.manual || []).length;
-        polyCount.textContent = count + " poligoni";
+        polyCount.textContent = I18n.t("review.polygons", count);
 
         if (deleteMode) {
             modeIndicator.textContent = "[DEL]";

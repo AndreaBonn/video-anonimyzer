@@ -6,6 +6,8 @@
 (function () {
     "use strict";
 
+    var t = I18n.t;
+
     // === State ===
     let jobId = null;
     let videoFilename = null;
@@ -53,6 +55,8 @@
     const headerStatusText = $("#headerStatusText");
     const toastContainer = $("#toastContainer");
 
+    const langToggle = $("#langToggle");
+
     // === Toast System ===
     const TOAST_ICONS = {
         success: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
@@ -79,7 +83,7 @@
         // Close button
         const closeBtn = document.createElement("button");
         closeBtn.className = "toast-close";
-        closeBtn.setAttribute("aria-label", "Chiudi");
+        closeBtn.setAttribute("aria-label", t("toast.close.aria"));
         closeBtn.textContent = "\u00D7";
         toast.appendChild(closeBtn);
 
@@ -97,10 +101,15 @@
     }
 
     // === Header Status ===
-    function setHeaderStatus(state, text) {
+    function setHeaderStatus(state, textKey) {
         headerStatusDot.className = "header-status-dot " + state;
-        headerStatusText.textContent = text;
+        headerStatusText.textContent = t(textKey);
     }
+
+    // === Language toggle ===
+    langToggle.addEventListener("click", function () {
+        I18n.toggleLanguage();
+    });
 
     // === Sezioni collassabili ===
     $$(".collapsible").forEach((el) => {
@@ -197,12 +206,12 @@
         fileInfo.classList.add("hidden");
         dropzone.classList.remove("hidden");
         updateStartButton();
-        setHeaderStatus("ready", "Pronto");
+        setHeaderStatus("ready", "status.ready");
     });
 
     function handleVideoFile(file) {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-        appendLog(`Upload: ${file.name} (${sizeMB} MB)...`, "info");
+        appendLog(t("upload.log", file.name, sizeMB), "info");
 
         const form = new FormData();
         form.append("video", file);
@@ -227,7 +236,7 @@
             try {
                 const data = JSON.parse(xhr.responseText);
                 if (data.error) {
-                    appendLog(`Errore upload: ${data.error}`, "error");
+                    appendLog(t("upload.error", data.error), "error");
                     showToast(data.error, "error");
                     return;
                 }
@@ -237,20 +246,20 @@
                 fileSize.textContent = `${data.size_mb} MB`;
                 fileInfo.classList.remove("hidden");
                 dropzone.classList.add("hidden");
-                appendLog(`Video caricato: ${data.filename}`, "success");
-                showToast(`Video caricato: ${data.filename}`, "success");
-                setHeaderStatus("ready", "Pronto");
+                appendLog(t("upload.success", data.filename), "success");
+                showToast(t("upload.success", data.filename), "success");
+                setHeaderStatus("ready", "status.ready");
                 updateStartButton();
             } catch (err) {
-                appendLog(`Errore upload: risposta non valida`, "error");
-                showToast("Errore durante l'upload", "error");
+                appendLog(t("upload.error.invalid"), "error");
+                showToast(t("upload.toast.error"), "error");
             }
         });
 
         xhr.addEventListener("error", () => {
             uploadProgress.classList.add("hidden");
-            appendLog("Errore upload: connessione fallita", "error");
-            showToast("Errore di connessione durante l'upload", "error");
+            appendLog(t("upload.error.connection.log"), "error");
+            showToast(t("upload.error.connection"), "error");
         });
 
         xhr.open("POST", "/api/upload");
@@ -269,19 +278,19 @@
             .then((r) => r.json())
             .then((data) => {
                 if (data.error) {
-                    appendLog(`Errore upload JSON: ${data.error}`, "error");
+                    appendLog(t("upload.json.error", data.error), "error");
                     showToast(data.error, "error");
                     return;
                 }
                 jsonFilename = data.filename;
                 jsonFileName.textContent = data.filename;
                 jsonFileInfo.classList.remove("hidden");
-                appendLog(`JSON caricato: ${data.filename}`, "success");
-                showToast(`JSON caricato: ${data.filename}`, "success");
+                appendLog(t("upload.json.success", data.filename), "success");
+                showToast(t("upload.json.success", data.filename), "success");
             })
             .catch((err) => {
-                appendLog(`Errore upload JSON: ${err.message}`, "error");
-                showToast("Errore upload JSON", "error");
+                appendLog(t("upload.json.error", err.message), "error");
+                showToast(t("upload.json.error.toast"), "error");
             });
     });
 
@@ -345,9 +354,9 @@
         resultsEl.innerHTML = "";
         btnStart.disabled = true;
         btnStop.disabled = false;
-        setHeaderStatus("processing", "Elaborazione...");
+        setHeaderStatus("processing", "status.processing");
 
-        appendLog("Avvio pipeline...", "phase");
+        appendLog(t("pipeline.starting"), "phase");
 
         fetch("/api/start", {
             method: "POST",
@@ -362,21 +371,21 @@
             .then((r) => r.json())
             .then((data) => {
                 if (data.error) {
-                    appendLog(`Errore avvio: ${data.error}`, "error");
+                    appendLog(t("pipeline.error.start", data.error), "error");
                     showToast(data.error, "error");
                     btnStart.disabled = false;
                     btnStop.disabled = true;
-                    setHeaderStatus("error", "Errore");
+                    setHeaderStatus("error", "status.error");
                     return;
                 }
                 connectSSE(jobId);
             })
             .catch((err) => {
-                appendLog(`Errore avvio: ${err.message}`, "error");
-                showToast("Errore di avvio pipeline", "error");
+                appendLog(t("pipeline.error.start", err.message), "error");
+                showToast(t("pipeline.error.toast"), "error");
                 btnStart.disabled = false;
                 btnStop.disabled = true;
-                setHeaderStatus("error", "Errore");
+                setHeaderStatus("error", "status.error");
             });
     }
 
@@ -390,8 +399,8 @@
         })
             .then((r) => r.json())
             .then(() => {
-                appendLog("Interruzione richiesta...", "info");
-                showToast("Interruzione richiesta", "warning");
+                appendLog(t("pipeline.stop.log"), "info");
+                showToast(t("pipeline.stop.toast"), "warning");
             });
     });
 
@@ -402,7 +411,7 @@
         eventSource = new EventSource(`/api/progress?job_id=${jid}`);
 
         eventSource.addEventListener("started", () => {
-            appendLog("Pipeline avviata", "success");
+            appendLog(t("pipeline.started"), "success");
             progressContainer.classList.remove("hidden");
         });
 
@@ -424,8 +433,8 @@
 
         eventSource.addEventListener("review_ready", (e) => {
             const data = JSON.parse(e.data);
-            appendLog("Revisione manuale pronta — usa l'editor qui sotto", "phase");
-            showToast("Revisione manuale pronta", "info", 8000);
+            appendLog(t("pipeline.review.ready"), "phase");
+            showToast(t("pipeline.review.toast"), "info", 8000);
             setActivePhase(3);
             ReviewEditor.init(data);
         });
@@ -437,9 +446,9 @@
 
         eventSource.addEventListener("completed", (e) => {
             const data = JSON.parse(e.data);
-            appendLog("Pipeline completata con successo!", "success");
-            showToast("Pipeline completata con successo!", "success", 8000);
-            setHeaderStatus("completed", "Completato");
+            appendLog(t("pipeline.completed"), "success");
+            showToast(t("pipeline.completed"), "success", 8000);
+            setHeaderStatus("completed", "status.completed");
             onPipelineEnd();
             showResults(data.job_id);
         });
@@ -447,9 +456,9 @@
         eventSource.addEventListener("error", (e) => {
             if (e.data) {
                 const data = JSON.parse(e.data);
-                appendLog(`Errore: ${data.message}`, "error");
+                appendLog(t("pipeline.error.generic", data.message), "error");
                 showToast(data.message, "error", 8000);
-                setHeaderStatus("error", "Errore");
+                setHeaderStatus("error", "status.error");
                 onPipelineEnd();
             }
         });
@@ -509,7 +518,7 @@
             data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
         progressFill.style.width = pct + "%";
         progressPercent.textContent = pct + "%";
-        progressDetail.textContent = `${data.current} / ${data.total} frame`;
+        progressDetail.textContent = t("pipeline.progress.frames", data.current, data.total);
 
         const progressBar = progressFill.parentElement;
         if (progressBar) {
@@ -517,7 +526,7 @@
         }
 
         if (data.rate > 0) {
-            progressRate.textContent = `${data.rate} frame/s`;
+            progressRate.textContent = t("pipeline.progress.rate", data.rate);
         }
     }
 
@@ -574,7 +583,7 @@
                     link.className = "btn-download";
                     link.href = "/api/download/" + jid + "/" + encodeURIComponent(f.type);
                     link.download = f.name;
-                    link.textContent = "Scarica";
+                    link.textContent = t("results.download");
 
                     item.appendChild(nameSpan);
                     item.appendChild(sizeSpan);
@@ -593,6 +602,7 @@
     }
 
     // === Init ===
+    I18n.applyLanguage();
     updateStartButton();
 
     // Init slider fills for frameSlider in review if present
