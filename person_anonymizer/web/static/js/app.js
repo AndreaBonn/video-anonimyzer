@@ -138,17 +138,95 @@
         });
     });
 
-    // === Help tooltip: click toggle (mobile support) ===
+    // === Help tooltip: DOM element with fixed positioning ===
+    const helpTooltip = $("#helpTooltip");
+    let activeHelpBtn = null;
+
+    function showHelpTooltip(btn) {
+        const text = btn.getAttribute("data-help");
+        if (!text) return;
+
+        helpTooltip.textContent = text;
+        helpTooltip.className = "help-tooltip";
+
+        // Render offscreen to measure
+        helpTooltip.style.left = "-9999px";
+        helpTooltip.style.top = "-9999px";
+        helpTooltip.classList.add("visible");
+
+        const rect = btn.getBoundingClientRect();
+        const ttRect = helpTooltip.getBoundingClientRect();
+        const gap = 8;
+
+        // Decide above or below
+        const spaceAbove = rect.top;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const placeAbove = spaceAbove >= ttRect.height + gap || spaceAbove > spaceBelow;
+
+        let top, arrowDir;
+        if (placeAbove) {
+            top = rect.top - ttRect.height - gap;
+            arrowDir = "above";
+        } else {
+            top = rect.bottom + gap;
+            arrowDir = "below";
+        }
+
+        // Horizontal: center on button, clamp to viewport
+        let left = rect.left + rect.width / 2 - ttRect.width / 2;
+        const margin = 8;
+        left = Math.max(margin, Math.min(left, window.innerWidth - ttRect.width - margin));
+
+        // Arrow position relative to tooltip
+        const arrowX = rect.left + rect.width / 2 - left;
+
+        helpTooltip.style.top = top + "px";
+        helpTooltip.style.left = left + "px";
+        helpTooltip.style.setProperty("--arrow-x", arrowX + "px");
+        helpTooltip.className = "help-tooltip help-tooltip--" + arrowDir + " visible";
+
+        activeHelpBtn = btn;
+        btn.classList.add("active");
+    }
+
+    function hideHelpTooltip() {
+        helpTooltip.classList.remove("visible");
+        if (activeHelpBtn) {
+            activeHelpBtn.classList.remove("active");
+            activeHelpBtn = null;
+        }
+    }
+
+    // Click toggle (mobile + desktop)
     document.addEventListener("click", (e) => {
         const btn = e.target.closest(".help-btn");
         if (btn) {
             e.preventDefault();
             e.stopPropagation();
-            $$(".help-btn.active").forEach((b) => { if (b !== btn) b.classList.remove("active"); });
-            btn.classList.toggle("active");
+            if (activeHelpBtn === btn) {
+                hideHelpTooltip();
+            } else {
+                hideHelpTooltip();
+                showHelpTooltip(btn);
+            }
             return;
         }
-        $$(".help-btn.active").forEach((b) => b.classList.remove("active"));
+        hideHelpTooltip();
+    });
+
+    // Hover support (desktop)
+    document.addEventListener("mouseover", (e) => {
+        const btn = e.target.closest(".help-btn");
+        if (btn && activeHelpBtn !== btn) {
+            hideHelpTooltip();
+            showHelpTooltip(btn);
+        }
+    });
+    document.addEventListener("mouseout", (e) => {
+        const btn = e.target.closest(".help-btn");
+        if (btn && activeHelpBtn === btn) {
+            hideHelpTooltip();
+        }
     });
 
     // === Slider value display + fill visualization ===

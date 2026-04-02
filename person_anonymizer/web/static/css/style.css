@@ -817,7 +817,7 @@ input[type="range"]::-moz-range-thumb {
     font-family: var(--font-mono);
 }
 
-/* --- Help Tooltip --- */
+/* --- Help Button --- */
 .help-btn {
     display: inline-flex;
     align-items: center;
@@ -832,7 +832,6 @@ input[type="range"]::-moz-range-thumb {
     font-weight: 700;
     font-family: var(--font-sans);
     cursor: pointer;
-    position: relative;
     vertical-align: middle;
     margin-left: var(--sp-1);
     padding: 0;
@@ -847,64 +846,48 @@ input[type="range"]::-moz-range-thumb {
     color: var(--accent);
     outline: none;
 }
-.help-btn::after {
-    content: attr(data-help);
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: max-content;
-    max-width: 260px;
+
+/* --- Help Tooltip (DOM element, position: fixed) --- */
+.help-tooltip {
+    position: fixed;
+    z-index: 10001;
+    max-width: 280px;
     padding: var(--sp-2) var(--sp-3);
     background: var(--bg-elevated);
     color: var(--text);
     border: 1px solid var(--border-emphasis);
     border-radius: var(--radius);
+    font-family: var(--font-sans);
     font-size: 0.75rem;
     font-weight: 400;
     line-height: 1.5;
     box-shadow: var(--shadow-lg);
     white-space: normal;
     text-align: left;
-    z-index: 500;
     pointer-events: none;
     opacity: 0;
-    visibility: hidden;
-    transition: opacity var(--transition), visibility var(--transition);
+    transition: opacity var(--transition);
+}
+.help-tooltip.visible {
+    opacity: 1;
 }
 /* Freccia tooltip */
-.help-btn::before {
+.help-tooltip::before {
     content: "";
     position: absolute;
-    bottom: calc(100% + 2px);
-    left: 50%;
-    transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--border-emphasis);
-    z-index: 501;
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity var(--transition), visibility var(--transition);
 }
-.help-btn:hover::after,
-.help-btn:hover::before,
-.help-btn:focus-visible::after,
-.help-btn:focus-visible::before,
-.help-btn.active::after,
-.help-btn.active::before {
-    opacity: 1;
-    visibility: visible;
-}
-/* Se il tooltip esce dal pannello sinistro, riallinealo a sinistra */
-.toggle-label .help-btn::after {
-    left: auto;
-    right: -8px;
-    transform: none;
-}
-.toggle-label .help-btn::before {
-    left: 50%;
+.help-tooltip--above::before {
+    bottom: -10px;
+    left: var(--arrow-x, 50%);
     transform: translateX(-50%);
+    border-top-color: var(--border-emphasis);
+}
+.help-tooltip--below::before {
+    top: -10px;
+    left: var(--arrow-x, 50%);
+    transform: translateX(-50%);
+    border-bottom-color: var(--border-emphasis);
 }
 
 /* --- Hint text --- */
