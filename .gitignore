@@ -110,6 +110,7 @@ desktop.ini
 *_annotations.json
 
 docs/
+!docs/REPORT_ATTIVITA.md
 
 # Upload e output web (dati GDPR-rilevanti)
 person_anonymizer/web/uploads/*/

@@ -23,6 +23,47 @@ Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacc
 
 CLI and web tool for automatic person anonymization in surveillance videos. Designed for fixed cameras with wide-angle lenses where people may appear small (30–100 px).
 
+### 🧠 SAM3 Backend (Optional)
+
+In addition to the default YOLO pipeline, Person Anonymizer supports **SAM3 (Segment Anything Model 3 by Meta)** as an optional detection/segmentation backend, providing pixel-precise person masks instead of bounding boxes.
+
+**Three detection modes:**
+
+| Mode | Description | GPU Requirement |
+|------|-------------|-----------------|
+| `yolo` | Default — YOLO v8 multi-scale (fast, battle-tested) | CUDA recommended, CPU supported |
+| `yolo+sam3` | Hybrid — YOLO detects, SAM3 refines masks | CUDA **required** |
+| `sam3` | Full SAM3 — detection and segmentation by SAM3 | CUDA **required**, ≥8 GB VRAM |
+
+**Requirements for SAM3:**
+
+- Python **3.12+**
+- CUDA-capable GPU (≥8 GB VRAM recommended for `sam3` mode)
+
+**Install SAM3 dependencies:**
+
+```bash
+# Option A — dedicated requirements file
+pip install -r requirements-sam3.txt
+
+# Option B — package extra
+pip install 'person-anonymizer[sam3]'
+```
+
+**CLI usage:**
+
+```bash
+# Hybrid mode: YOLO detection + SAM3 mask refinement
+python -m person_anonymizer.cli video.mp4 --backend yolo+sam3
+
+# Full SAM3 mode: detection and segmentation entirely by SAM3
+python -m person_anonymizer.cli video.mp4 --backend sam3
+```
+
+**Web interface:** a "Detection backend" dropdown is available in the configuration panel to select the mode without using the CLI.
+
+---
+
 ### 🚀 Features
 
 - **Multi-scale YOLO v8 detection** — inference at 4 scales (1.0x–2.5x) + 3x3 sliding window + Test-Time Augmentation
@@ -38,10 +79,10 @@ CLI and web tool for automatic person anonymization in surveillance videos. Desi
 
 ### 📦 Requirements
 
-- Python 3.11+
+- Python 3.11+ (3.12+ required for SAM3 backend)
 - ffmpeg (for H.264 encoding and audio preservation)
 - ~150 MB disk space for YOLO models (downloaded automatically on first run)
-- CUDA GPU recommended; CPU also supported
+- CUDA GPU recommended; CPU also supported (CUDA required for SAM3 modes)
 
 **Install ffmpeg:**
 
@@ -97,6 +138,7 @@ python -m person_anonymizer.cli video.mp4 --review annotations.json --normalize
 | `-M, --mode` | `manual` (with review) or `auto` | `manual` |
 | `-o, --output` | Output file path | `<input>_anonymized.mp4` |
 | `-m, --method` | `pixelation` or `blur` | `pixelation` |
+| `--backend` | Detection backend: `yolo`, `yolo+sam3`, `sam3` | `yolo` |
 | `--no-debug` | Disable debug video | `False` |
 | `--no-report` | Disable CSV report | `False` |
 | `--review` | Reload annotations from JSON | `None` |
@@ -181,13 +223,16 @@ person_anonymizer/
 ├── rendering.py         # Video rendering + review stats
 ├── manual_reviewer.py   # OpenCV manual review GUI
 ├── camera_calibration.py# Camera calibration utility
+├── sam3_backend.py      # SAM3 segmentation backend
+├── backend_factory.py   # Backend selection and instantiation
 └── web/                 # Flask web interface
     ├── app.py           # Flask routes + SSE + security
     ├── pipeline_runner.py
     ├── sse_manager.py
     └── review_state.py
-tests/                   # 218 tests (pytest)
+tests/                   # 293 tests (pytest)
 reports/                 # Audit reports
+requirements-sam3.txt    # SAM3 optional dependencies
 ```
 
 ### 🛠 Development
@@ -205,6 +250,7 @@ See [SECURITY.md](SECURITY.md) for full details on implemented protections.
 ### 🧰 Technologies
 
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection
+- [Meta SAM3](https://github.com/facebookresearch/segment-anything-3) — Pixel-precise segmentation (optional)
 - [ByteTrack](https://github.com/ifzhang/ByteTrack) — Multi-object tracking
 - [OpenCV](https://opencv.org/) — Video processing
 - [Flask](https://flask.palletsprojects.com/) — Web interface
@@ -227,6 +273,47 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 Tool CLI e web per l'anonimizzazione automatica di persone in video di sorveglianza. Progettato per telecamere fisse con lenti grandangolari, dove le persone possono apparire di piccole dimensioni (30–100 px).
 
+### 🧠 Backend SAM3 (Opzionale)
+
+Oltre alla pipeline YOLO predefinita, Person Anonymizer supporta **SAM3 (Segment Anything Model 3 di Meta)** come backend opzionale di detection e segmentazione, che produce maschere pixel-precise delle persone al posto dei bounding box.
+
+**Tre modalità di rilevamento:**
+
+| Modalità | Descrizione | Requisiti GPU |
+|----------|-------------|---------------|
+| `yolo` | Default — YOLO v8 multi-scala (rapido, collaudato) | CUDA consigliata, supporta anche CPU |
+| `yolo+sam3` | Ibrida — YOLO rileva, SAM3 raffina le maschere | CUDA **obbligatoria** |
+| `sam3` | SAM3 completo — detection e segmentazione interamente tramite SAM3 | CUDA **obbligatoria**, ≥8 GB VRAM |
+
+**Requisiti per SAM3:**
+
+- Python **3.12+**
+- GPU con supporto CUDA (≥8 GB VRAM consigliati per la modalità `sam3`)
+
+**Installazione dipendenze SAM3:**
+
+```bash
+# Opzione A — file requirements dedicato
+pip install -r requirements-sam3.txt
+
+# Opzione B — extra del package
+pip install 'person-anonymizer[sam3]'
+```
+
+**Utilizzo CLI:**
+
+```bash
+# Modalità ibrida: YOLO rileva, SAM3 raffina le maschere
+python -m person_anonymizer.cli video.mp4 --backend yolo+sam3
+
+# Modalità SAM3 completo: detection e segmentazione interamente tramite SAM3
+python -m person_anonymizer.cli video.mp4 --backend sam3
+```
+
+**Interfaccia web:** nel pannello di configurazione è disponibile un menu a tendina "Backend rilevamento" per selezionare la modalità senza usare la CLI.
+
+---
+
 ### 🚀 Funzionalità
 
 - **Rilevamento YOLO v8 multi-scala** — inferenza a 4 scale (1.0x–2.5x) + sliding window 3x3 + Test-Time Augmentation
@@ -242,10 +329,10 @@ Tool CLI e web per l'anonimizzazione automatica di persone in video di sorveglia
 
 ### 📦 Requisiti
 
-- Python 3.11+
+- Python 3.11+ (3.12+ obbligatorio per il backend SAM3)
 - ffmpeg (per encoding H.264 e preservazione audio)
 - ~150 MB di spazio disco per i modelli YOLO (scaricati automaticamente al primo avvio)
-- GPU CUDA raccomandata; funziona anche su CPU
+- GPU CUDA raccomandata; funziona anche su CPU (CUDA obbligatoria per le modalità SAM3)
 
 **Installare ffmpeg:**
 
@@ -301,6 +388,7 @@ python -m person_anonymizer.cli video.mp4 --review annotazioni.json --normalize
 | `-M, --mode` | `manual` (con revisione) o `auto` | `manual` |
 | `-o, --output` | Percorso file di output | `<input>_anonymized.mp4` |
 | `-m, --method` | `pixelation` o `blur` | `pixelation` |
+| `--backend` | Backend rilevamento: `yolo`, `yolo+sam3`, `sam3` | `yolo` |
 | `--no-debug` | Disabilita video debug | `False` |
 | `--no-report` | Disabilita CSV report | `False` |
 | `--review` | Ricarica annotazioni da JSON | `None` |
@@ -385,13 +473,16 @@ person_anonymizer/
 ├── rendering.py         # Rendering video + statistiche review
 ├── manual_reviewer.py   # GUI OpenCV per revisione manuale
 ├── camera_calibration.py# Utility calibrazione camera
+├── sam3_backend.py      # Backend segmentazione SAM3
+├── backend_factory.py   # Selezione e istanziazione backend
 └── web/                 # Interfaccia web Flask
     ├── app.py           # Flask routes + SSE + security
     ├── pipeline_runner.py
     ├── sse_manager.py
     └── review_state.py
-tests/                   # 218 test (pytest)
+tests/                   # 293 test (pytest)
 reports/                 # Report di audit
+requirements-sam3.txt    # Dipendenze opzionali SAM3
 ```
 
 ### 🛠 Sviluppo
@@ -409,6 +500,7 @@ Vedi [SECURITY.md](SECURITY.md) per i dettagli completi sulle protezioni impleme
 ### 🧰 Tecnologie
 
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection
+- [Meta SAM3](https://github.com/facebookresearch/segment-anything-3) — Segmentazione pixel-precisa (opzionale)
 - [ByteTrack](https://github.com/ifzhang/ByteTrack) — Multi-object tracking
 - [OpenCV](https://opencv.org/) — Video processing
 - [Flask](https://flask.palletsprojects.com/) — Interfaccia web
