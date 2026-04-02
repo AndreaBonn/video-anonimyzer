@@ -6,6 +6,8 @@
 
 Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacci</a>
 
+[![CI](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml)
+
 [English](#english) | [Italiano](#italiano)
 
 </div>
@@ -36,7 +38,7 @@ CLI and web tool for automatic person anonymization in surveillance videos. Desi
 
 ### 📦 Requirements
 
-- Python 3.10+
+- Python 3.11+
 - ffmpeg (for H.264 encoding and audio preservation)
 - ~150 MB disk space for YOLO models (downloaded automatically on first run)
 - CUDA GPU recommended; CPU also supported
@@ -240,7 +242,7 @@ Tool CLI e web per l'anonimizzazione automatica di persone in video di sorveglia
 
 ### 📦 Requisiti
 
-- Python 3.10+
+- Python 3.11+
 - ffmpeg (per encoding H.264 e preservazione audio)
 - ~150 MB di spazio disco per i modelli YOLO (scaricati automaticamente al primo avvio)
 - GPU CUDA raccomandata; funziona anche su CPU
