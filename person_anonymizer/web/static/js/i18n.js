@@ -18,10 +18,6 @@ const I18n = (function () {
     // =========================================================================
     const translations = {
         // --- Header ---
-        "header.subtitle": {
-            it: "Oscuramento automatico persone in video di sorveglianza",
-            en: "Automatic person anonymization in surveillance video",
-        },
         "status.ready": { it: "Pronto", en: "Ready" },
         "status.processing": { it: "Elaborazione...", en: "Processing..." },
         "status.completed": { it: "Completato", en: "Completed" },
@@ -247,7 +243,7 @@ const I18n = (function () {
         // --- Toast ---
         "toast.close.aria": { it: "Chiudi", en: "Close" },
 
-        // --- Language toggle ---
+        // --- Language switcher ---
         "lang.toggle.aria": { it: "Cambia lingua", en: "Change language" },
     };
 
@@ -304,9 +300,6 @@ const I18n = (function () {
             if (entry) el.setAttribute("title", entry[currentLang] || entry["it"]);
         });
 
-        // Aggiorna label del toggle lingua
-        var toggleLabel = document.getElementById("langLabel");
-        if (toggleLabel) toggleLabel.textContent = currentLang.toUpperCase();
     }
 
     /**

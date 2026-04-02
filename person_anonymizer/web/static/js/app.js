@@ -55,7 +55,8 @@
     const headerStatusText = $("#headerStatusText");
     const toastContainer = $("#toastContainer");
 
-    const langToggle = $("#langToggle");
+    const langBtnIt = $("#langBtnIt");
+    const langBtnEn = $("#langBtnEn");
 
     // === Toast System ===
     const TOAST_ICONS = {
@@ -106,9 +107,19 @@
         headerStatusText.textContent = t(textKey);
     }
 
-    // === Language toggle ===
-    langToggle.addEventListener("click", function () {
-        I18n.toggleLanguage();
+    // === Language switcher ===
+    function updateLangButtons() {
+        const lang = I18n.getCurrentLang();
+        langBtnIt.classList.toggle("lang-btn--active", lang === "it");
+        langBtnEn.classList.toggle("lang-btn--active", lang === "en");
+    }
+    langBtnIt.addEventListener("click", function () {
+        I18n.setLanguage("it");
+        updateLangButtons();
+    });
+    langBtnEn.addEventListener("click", function () {
+        I18n.setLanguage("en");
+        updateLangButtons();
     });
 
     // === Sezioni collassabili ===
@@ -603,6 +614,7 @@
 
     // === Init ===
     I18n.applyLanguage();
+    updateLangButtons();
     updateStartButton();
 
     // Init slider fills for frameSlider in review if present

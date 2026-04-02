@@ -14,11 +14,11 @@
 <!-- Header -->
 <header class="header">
     <h1>Person Anonymizer</h1>
-    <span class="header-subtitle" data-i18n="header.subtitle">Oscuramento automatico persone in video di sorveglianza</span>
     <div class="header-status">
-        <button id="langToggle" class="lang-toggle" type="button" aria-label="Cambia lingua" data-i18n-aria="lang.toggle.aria">
-            <span id="langLabel">IT</span>
-        </button>
+        <div class="lang-switcher" role="group" aria-label="Cambia lingua" data-i18n-aria="lang.toggle.aria">
+            <button id="langBtnIt" class="lang-btn lang-btn--active" type="button" data-lang="it">IT</button>
+            <button id="langBtnEn" class="lang-btn" type="button" data-lang="en">EN</button>
+        </div>
         <span id="headerStatusDot" class="header-status-dot ready"></span>
         <span id="headerStatusText" data-i18n="status.ready">Pronto</span>
     </div>
@@ -348,6 +348,10 @@
     </section>
 
 </main>
+
+<footer class="footer">
+    Built by <a href="https://andreabonn.github.io/" target="_blank" rel="noopener noreferrer">Andrea Bonacci</a>
+</footer>
 
 <script src="/static/js/i18n.js"></script>
 <script src="/static/js/review-editor.js"></script>
