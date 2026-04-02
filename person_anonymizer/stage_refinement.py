@@ -56,7 +56,7 @@ def run_refinement_loop(
         (annotations, actual_passes, annotations_added)
     """
     if not config.enable_post_render_check:
-        print(f"\n[FASE 2/5] Auto refinement — saltato (verifica disabilitata)")
+        print("\n[FASE 2/5] Auto refinement — saltato (verifica disabilitata)")
         return annotations, 0, 0
 
     actual_passes, annotations_added = 0, 0
@@ -90,7 +90,7 @@ def run_refinement_loop(
         )
 
         if not alert_frames:
-            print(f"\n  Nessun rilevamento residuo — rendering OK.")
+            print("\n  Nessun rilevamento residuo — rendering OK.")
             break
 
         genuine_alerts, n_artifacts, n_genuine = filter_artifact_detections(
@@ -101,7 +101,7 @@ def run_refinement_loop(
         print(f"  Residui genuini: {n_genuine}")
 
         if not genuine_alerts:
-            print(f"  Tutti i rilevamenti sono artefatti della pixelazione — rendering OK.")
+            print("  Tutti i rilevamenti sono artefatti della pixelazione — rendering OK.")
             break
 
         if pass_num == config.max_refinement_passes:

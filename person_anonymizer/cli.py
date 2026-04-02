@@ -18,7 +18,10 @@ def parse_args():
         Argomenti parsati dalla riga di comando.
     """
     parser = argparse.ArgumentParser(
-        description=f"Person Anonymizer v{VERSION} — Oscuramento automatico persone in video di sorveglianza",
+        description=(
+            f"Person Anonymizer v{VERSION} — "
+            "Oscuramento automatico persone in video di sorveglianza"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("input", help="Percorso del video da elaborare")
@@ -42,12 +45,18 @@ def parse_args():
     parser.add_argument(
         "--review",
         default=None,
-        help="Ricarica annotazioni da JSON esistente, salta la detection e apre solo la revisione manuale",
+        help=(
+            "Ricarica annotazioni da JSON esistente, "
+            "salta la detection e apre solo la revisione manuale"
+        ),
     )
     parser.add_argument(
         "--normalize",
         action="store_true",
-        help="Normalizza i poligoni in rettangoli e unifica le aree sovrapposte. Richiede --review.",
+        help=(
+            "Normalizza i poligoni in rettangoli e unifica "
+            "le aree sovrapposte. Richiede --review."
+        ),
     )
     return parser.parse_args()
 
@@ -67,6 +76,7 @@ def main():
     )
     try:
         from .pipeline import run_pipeline
+
         run_pipeline(ctx)
     except PipelineInputError as e:
         print(f"\nErrore: {e}")

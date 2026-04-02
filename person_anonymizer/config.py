@@ -103,11 +103,13 @@ class PipelineConfig:
         """Valida i parametri di configurazione."""
         if not (0.01 <= self.detection_confidence <= 0.99):
             raise ValueError(
-                f"detection_confidence deve essere tra 0.01 e 0.99, ricevuto {self.detection_confidence}"
+                "detection_confidence deve essere tra 0.01 e 0.99, "
+                f"ricevuto {self.detection_confidence}"
             )
         if not (1 <= self.anonymization_intensity <= 100):
             raise ValueError(
-                f"anonymization_intensity deve essere tra 1 e 100, ricevuto {self.anonymization_intensity}"
+                "anonymization_intensity deve essere tra 1 e 100, "
+                f"ricevuto {self.anonymization_intensity}"
             )
         if self.person_padding < 0 or self.person_padding > 200:
             raise ValueError(
@@ -119,7 +121,8 @@ class PipelineConfig:
             )
         if not (0.0 < self.nms_iou_threshold < 1.0):
             raise ValueError(
-                f"nms_iou_threshold deve essere tra 0 e 1 (escl.), ricevuto {self.nms_iou_threshold}"
+                "nms_iou_threshold deve essere tra 0 e 1 (escl.), "
+                f"ricevuto {self.nms_iou_threshold}"
             )
         if self.operation_mode not in ("manual", "auto"):
             raise ValueError(
@@ -127,7 +130,8 @@ class PipelineConfig:
             )
         if self.anonymization_method not in ("pixelation", "blur"):
             raise ValueError(
-                f"anonymization_method deve essere 'pixelation' o 'blur', ricevuto '{self.anonymization_method}'"
+                "anonymization_method deve essere 'pixelation' o 'blur', "
+                f"ricevuto '{self.anonymization_method}'"
             )
         if not (0.0 < self.smoothing_alpha <= 1.0):
             raise ValueError(
@@ -141,7 +145,8 @@ class PipelineConfig:
             )
         if not (1 <= self.max_refinement_passes <= 10):
             raise ValueError(
-                f"max_refinement_passes deve essere tra 1 e 10, ricevuto {self.max_refinement_passes}"
+                "max_refinement_passes deve essere tra 1 e 10, "
+                f"ricevuto {self.max_refinement_passes}"
             )
         if self.sliding_window_grid < 1 or self.sliding_window_grid > 10:
             raise ValueError(
@@ -151,5 +156,6 @@ class PipelineConfig:
             raise ValueError("inference_scales non può essere vuota")
         if self.adaptive_reference_height < 1:
             raise ValueError(
-                f"adaptive_reference_height deve essere >= 1, ricevuto {self.adaptive_reference_height}"
+                "adaptive_reference_height deve essere >= 1, "
+                f"ricevuto {self.adaptive_reference_height}"
             )

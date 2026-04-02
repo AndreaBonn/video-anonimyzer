@@ -8,18 +8,17 @@ from pathlib import Path
 import cv2
 from ultralytics import YOLO
 
-from .config import VERSION, SUPPORTED_EXTENSIONS, PipelineConfig
+from .config import SUPPORTED_EXTENSIONS, VERSION, PipelineConfig
 from .models import (
     FisheyeContext,
     OutputPaths,
-    VideoMeta,
-    PipelineResult,
     PipelineContext,
-    PipelineError,
     PipelineInputError,
+    PipelineResult,
+    VideoMeta,
 )
-from .output import save_outputs, load_annotations_from_json
-from .pipeline_stages import run_detection_loop, run_refinement_loop, run_manual_review_stage
+from .output import load_annotations_from_json, save_outputs
+from .pipeline_stages import run_detection_loop, run_manual_review_stage, run_refinement_loop
 from .postprocessing import normalize_annotations
 from .preprocessing import build_undistortion_maps, should_interpolate
 from .rendering import render_video
@@ -130,7 +129,8 @@ def run_pipeline(ctx: PipelineContext, config=None):
     print(f"\nPerson Anonymizer v{VERSION}")
     print("-" * 40)
     print(
-        f"Input:          {Path(input_path).name}  ({total_frames} frame, {fps:.0f}fps, {res_label})"
+        f"Input:          {Path(input_path).name}  "
+        f"({total_frames} frame, {fps:.0f}fps, {res_label})"
     )
     print(f"Output:         {Path(output_path).name}")
     print(f"Modalità:      {mode}")
@@ -147,7 +147,8 @@ def run_pipeline(ctx: PipelineContext, config=None):
         else "disabilitato"
     )
     print(f"Sliding window: {sw_status}")
-    print(f"Fish-eye:       {'abilitato' if fisheye.enabled else 'disabilitato'}")
+    fe_label = "abilitato" if config.enable_fisheye_correction else "disabilitato"
+    print(f"Fish-eye:       {fe_label}")
     print(
         f"Tracking:       ByteTrack (max_age: {config.track_max_age})"
         if config.enable_tracking
@@ -191,7 +192,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
     if review_json:
         annotations, mode = load_annotations_from_json(review_json, config)
         if ctx.normalize:
-            print(f"\n  Normalizzazione annotazioni...")
+            print("\n  Normalizzazione annotazioni...")
             annotations, (n_before, n_after) = normalize_annotations(annotations, config)
             print(f"  Poligoni prima:  {n_before}")
             print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
@@ -239,12 +240,12 @@ def run_pipeline(ctx: PipelineContext, config=None):
             fisheye,
         )
     else:
-        print(f"\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
+        print("\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
 
     # ============================================
     # FASE 4 — RENDERING FINALE
     # ============================================
-    print(f"\n[FASE 4/5] Rendering finale...")
+    print("\n[FASE 4/5] Rendering finale...")
     render_video(
         input_path,
         temp_video_path,
@@ -263,7 +264,7 @@ def run_pipeline(ctx: PipelineContext, config=None):
     # ============================================
     # FASE 5 — POST-PROCESSING
     # ============================================
-    print(f"\n[FASE 5/5] Post-processing...")
+    print("\n[FASE 5/5] Post-processing...")
     paths = OutputPaths(
         output=output_path,
         temp_video=temp_video_path,

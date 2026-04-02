@@ -9,8 +9,6 @@ run_full_detection che orchestra tutte le strategie su un singolo frame.
 import cv2
 import numpy as np
 
-from .config import PipelineConfig
-
 __all__ = [
     "run_full_detection",
     "apply_nms",

@@ -7,7 +7,6 @@ l'interpolazione sub-frame.
 """
 
 import cv2
-import numpy as np
 
 __all__ = [
     "build_undistortion_maps",

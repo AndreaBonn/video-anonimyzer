@@ -129,10 +129,10 @@ def main():
 
     np.savez(args.output, camera_matrix=camera_matrix, dist_coefficients=dist_coefficients)
 
-    print(f"\nCalibrazione completata!")
+    print("\nCalibrazione completata!")
     print(f"  Errore RMS: {rms_error:.4f}")
     print(f"  File salvato: {args.output}")
-    print(f"\nPer usare i parametri in person_anonymizer.py:")
+    print("\nPer usare i parametri in person_anonymizer.py:")
     print(f"  CAMERA_MATRIX = np.{repr(camera_matrix)}")
     print(f"  DIST_COEFFICIENTS = np.{repr(dist_coefficients.ravel())}")
 

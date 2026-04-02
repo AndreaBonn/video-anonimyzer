@@ -5,11 +5,11 @@ Gestisce la finestra interattiva per aggiungere/rimuovere poligoni
 di oscuramento su ogni frame del video.
 """
 
-import cv2
-import numpy as np
 from copy import deepcopy
 
-from .config import PipelineConfig
+import cv2
+import numpy as np
+
 from .models import FisheyeContext
 
 __all__ = ["ManualReviewer", "run_manual_review"]

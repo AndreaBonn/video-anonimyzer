@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import cv2
-    import numpy as np
+
     from .preprocessing import MotionDetector
     from .tracking import TemporalSmoother
     from .web.review_state import ReviewState

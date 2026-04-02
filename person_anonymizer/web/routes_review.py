@@ -1,6 +1,6 @@
 """Route per la revisione manuale delle annotazioni."""
 
-from flask import Blueprint, request, jsonify, Response, current_app
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from person_anonymizer.web.extensions import limiter
 

@@ -6,17 +6,17 @@ Crea PipelineConfig dai parametri web, cattura stdout/tqdm, invia eventi SSE.
 import threading
 from pathlib import Path
 
-from person_anonymizer.web.sse_manager import SSEManager
-from person_anonymizer.web.review_state import ReviewState
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import PipelineContext, PipelineError
 from person_anonymizer.web.config_validator import (
-    _CONFIG_VALIDATORS,  # noqa: F401
-    _BOOL_FIELDS,  # noqa: F401
     _ALLOWED_FIELDS,
+    _BOOL_FIELDS,  # noqa: F401
+    _CONFIG_VALIDATORS,  # noqa: F401
     validate_config_params,
 )
-from person_anonymizer.web.output_capture import TqdmCapture, StdoutCapture
+from person_anonymizer.web.output_capture import StdoutCapture, TqdmCapture
+from person_anonymizer.web.review_state import ReviewState
+from person_anonymizer.web.sse_manager import SSEManager
 
 __all__ = ["PipelineRunner", "validate_config_params"]
 
@@ -105,6 +105,7 @@ class PipelineRunner:
     def _run(self, job_id: str, video_path: str, config_dict: dict, review_json: str | None):
         """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
         import logging
+
         import person_anonymizer as pa
         from person_anonymizer.pipeline import run_pipeline
 

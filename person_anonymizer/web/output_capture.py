@@ -20,6 +20,7 @@ class TqdmCapture:
     def install(self):
         """Installa il patch su tqdm (nel modulo tqdm e in pipeline_stages)."""
         import tqdm as tqdm_module
+
         import person_anonymizer.pipeline_stages as pa_stages
 
         self._original_tqdm = tqdm_module.tqdm
@@ -87,6 +88,7 @@ class TqdmCapture:
         """Ripristina tqdm originale."""
         if self._original_tqdm:
             import tqdm as tqdm_module
+
             import person_anonymizer.pipeline_stages as pa_stages
 
             tqdm_module.tqdm = self._original_tqdm

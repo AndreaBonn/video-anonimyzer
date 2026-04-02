@@ -5,11 +5,10 @@ import numpy as np
 from tqdm import tqdm
 
 from .anonymization import box_to_polygon, resolve_intensity
-from .config import PipelineConfig
-from .detection import apply_nms, run_full_detection, get_window_patches
+from .detection import apply_nms, get_window_patches, run_full_detection
 from .models import FrameDetectionResult, FrameProcessors
-from .preprocessing import MotionDetector, should_interpolate, interpolate_frames, enhance_frame
-from .tracking import create_tracker, TemporalSmoother, update_tracker
+from .preprocessing import MotionDetector, enhance_frame, interpolate_frames, should_interpolate
+from .tracking import TemporalSmoother, create_tracker, update_tracker
 
 __all__ = ["run_detection_loop"]
 
@@ -191,7 +190,7 @@ def run_detection_loop(cap, total_frames, model, config, fisheye, stop_event=Non
     unique_ids, total_instances, frames_zero_det, all_confs, corrupted = set(), 0, 0, [], []
     prev_interp = None
 
-    print(f"\n[FASE 1/5] Rilevamento automatico...")
+    print("\n[FASE 1/5] Rilevamento automatico...")
     pbar = tqdm(total=total_frames, desc="Elaborazione", unit=" frame")
     frame_idx = 0
 

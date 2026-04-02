@@ -2,7 +2,7 @@
 
 import uuid
 
-from flask import request, jsonify
+from flask import jsonify, request
 
 
 def register_middleware(app):

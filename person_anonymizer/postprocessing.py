@@ -13,7 +13,6 @@ import shutil
 
 import cv2
 import ffmpeg
-import numpy as np
 from tqdm import tqdm
 
 from .anonymization import polygon_to_bbox

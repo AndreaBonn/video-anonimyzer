@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 
-from flask import Blueprint, jsonify, send_file, current_app
+from flask import Blueprint, current_app, jsonify, send_file
 
 from person_anonymizer.web.extensions import limiter, validate_job_id
 

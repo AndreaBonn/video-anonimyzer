@@ -3,24 +3,24 @@ Flask web app per Person Anonymizer.
 Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
-import os
-import uuid
 import json
+import os
 import shutil
 import threading
 import time
+import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 from werkzeug.utils import secure_filename
 
 from person_anonymizer.config import SUPPORTED_EXTENSIONS
-from person_anonymizer.web.sse_manager import SSEManager
-from person_anonymizer.web.pipeline_runner import PipelineRunner
 from person_anonymizer.web.extensions import limiter, validate_job_id
 from person_anonymizer.web.middleware import register_middleware
-from person_anonymizer.web.routes_review import review_bp
+from person_anonymizer.web.pipeline_runner import PipelineRunner
 from person_anonymizer.web.routes_output import output_bp
+from person_anonymizer.web.routes_review import review_bp
+from person_anonymizer.web.sse_manager import SSEManager
 
 app = Flask(__name__)
 _secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -288,7 +288,7 @@ def progress_stream():
         try:
             q = sse_manager.subscribe(job_id)
         except RuntimeError:
-            yield f'event: error\ndata: {{"message": "Troppi client connessi"}}\n\n'
+            yield 'event: error\ndata: {"message": "Troppi client connessi"}\n\n'
             return
         try:
             while True:
@@ -297,7 +297,10 @@ def progress_stream():
                 except q_module.Empty:
                     yield ": heartbeat\n\n"
                     if time.monotonic() - start > max_duration:
-                        yield 'event: timeout\ndata: {"message": "Connessione SSE scaduta dopo 2h"}\n\n'
+                        yield (
+                            "event: timeout\n"
+                            'data: {"message": "Connessione SSE scaduta dopo 2h"}\n\n'
+                        )
                         break
                     continue
                 if event is None:
@@ -353,6 +356,6 @@ if __name__ == "__main__":
     )
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("FLASK_PORT", "5000"))
-    print(f"\n  Person Anonymizer Web GUI")
+    print("\n  Person Anonymizer Web GUI")
     print(f"  Apri http://{host}:{port} nel browser\n")
     app.run(host=host, port=port, debug=False, threaded=True)

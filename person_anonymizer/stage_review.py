@@ -49,7 +49,7 @@ def run_manual_review_stage(
     web_review_state = ctx.review_state
 
     if web_review_state is not None:
-        print(f"\n[FASE 3/5] Revisione manuale — in attesa di conferma dal browser...")
+        print("\n[FASE 3/5] Revisione manuale — in attesa di conferma dal browser...")
         web_review_state.setup(
             input_path,
             annotations,
@@ -77,12 +77,12 @@ def run_manual_review_stage(
             if total_frames > 0
             else "(N/A)"
         )
-        print(f"\n  Revisione completata:")
+        print("\n  Revisione completata:")
         print(f"  Poligoni aggiunti:     {review_stats['added']}")
         print(f"  Poligoni rimossi:      {review_stats['removed']}")
         print(f"  Frame modificati:      {review_stats['frames_modified']}  {pct}")
     else:
-        print(f"\n[FASE 3/5] Revisione manuale — apertura interfaccia...")
+        print("\n[FASE 3/5] Revisione manuale — apertura interfaccia...")
         print(
             "  -> Usa Spazio per navigare, Click per disegnare, D per eliminare, Q per confermare."
         )
@@ -94,7 +94,7 @@ def run_manual_review_stage(
             if total_frames > 0
             else "(N/A)"
         )
-        print(f"\n  Revisione completata:")
+        print("\n  Revisione completata:")
         print(f"  Frame revisionati:     {review_stats['frames_reviewed']} / {total_frames}")
         print(f"  Poligoni aggiunti:     {review_stats['added']}")
         print(f"  Poligoni rimossi:      {review_stats['removed']}")
