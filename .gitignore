@@ -109,8 +109,9 @@ desktop.ini
 *_report.csv
 *_annotations.json
 
+# Documentazione interna (non versionata)
 docs/
-!docs/REPORT_ATTIVITA.md
+reports/
 
 # Upload e output web (dati GDPR-rilevanti)
 person_anonymizer/web/uploads/*/
