@@ -17,6 +17,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -38,4 +40,33 @@ jobs:
           pip install -e .
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v --junitxml=test-results.xml
+
+      - name: Generate test badge
+        if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
+        run: |
+          python -c "
+          import json, xml.etree.ElementTree as ET
+          root = ET.parse('test-results.xml').getroot()
+          tests = int(root.attrib.get('tests', 0))
+          failures = int(root.attrib.get('failures', 0))
+          errors = int(root.attrib.get('errors', 0))
+          passed = tests - failures - errors
+          badge = {
+              'schemaVersion': 1,
+              'label': 'tests',
+              'message': f'{passed}/{tests} passed' if failures + errors > 0 else f'{passed} passed',
+              'color': 'red' if failures + errors > 0 else 'brightgreen'
+          }
+          with open('badges/test-badge.json', 'w') as f:
+              json.dump(badge, f)
+          "
+
+      - name: Commit badge
+        if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add badges/test-badge.json
+          git diff --cached --quiet || git commit -m "ci: update test badge [skip ci]"
+          git push
