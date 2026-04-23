@@ -27,7 +27,7 @@ Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacc
 
 CLI and web tool for automatic person anonymization in surveillance videos. Designed for fixed cameras with wide-angle lenses where people may appear small (30–100 px).
 
-### 🧠 SAM3 Backend (Optional)
+### SAM3 Backend (Optional)
 
 In addition to the default YOLO pipeline, Person Anonymizer supports **SAM3 (Segment Anything Model 3 by Meta)** as an optional detection/segmentation backend, providing pixel-precise person masks instead of bounding boxes.
 
@@ -68,7 +68,7 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 
 ---
 
-### 🚀 Features
+### Features
 
 - **Multi-scale YOLO v8 detection** — inference at 4 scales (1.0x–2.5x) + 3x3 sliding window + Test-Time Augmentation
 - **ByteTrack tracking** — persistent person IDs across consecutive frames
@@ -81,7 +81,7 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 - **Optional fish-eye correction** — optical undistortion via camera calibration
 - **Complete output set** — anonymized H.264 video, debug video, CSV report, reusable JSON annotations
 
-### 📦 Requirements
+### Requirements
 
 - Python 3.11+ (3.12+ required for SAM3 backend)
 - ffmpeg (for H.264 encoding and audio preservation)
@@ -101,7 +101,7 @@ brew install ffmpeg
 choco install ffmpeg
 ```
 
-### 🔧 Installation
+### Installation
 
 ```bash
 git clone https://github.com/AndreaBonn/PRIVATE__video-anonimyzer.git
@@ -112,7 +112,7 @@ source person_anonymizer/.venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 🎯 CLI Usage
+### CLI Usage
 
 ```bash
 # Standard — automatic detection + manual review (recommended)
@@ -148,7 +148,7 @@ python -m person_anonymizer.cli video.mp4 --review annotations.json --normalize
 | `--review` | Reload annotations from JSON | `None` |
 | `--normalize` | Normalize polygons (requires --review) | `False` |
 
-### 🌐 Web Interface
+### Web Interface
 
 ```bash
 python -m person_anonymizer.web.app
@@ -170,7 +170,7 @@ The web GUI allows you to:
 | `FLASK_HOST` | Web server host | `127.0.0.1` |
 | `FLASK_PORT` | Web server port | `5000` |
 
-### ⚙️ Pipeline (5 stages)
+### Pipeline (5 stages)
 
 1. **Detection** — YOLO v8 multi-scale + sliding window + TTA, with optional motion detection
 2. **Auto-refinement** — Re-render + second YOLO pass, up to 3 iterations
@@ -178,7 +178,7 @@ The web GUI allows you to:
 4. **Rendering** — Apply anonymization to the original video (FFV1 lossless intermediate)
 5. **Post-processing** — H.264 encoding with ffmpeg, audio preservation, report saving
 
-### 📁 Output Files
+### Output Files
 
 | File | Description |
 |------|-------------|
@@ -187,11 +187,11 @@ The web GUI allows you to:
 | `*_report.csv` | Per-frame report (confidence, detections, motion) |
 | `*_annotations.json` | Full annotations (reusable with --review) |
 
-### 🗂 Supported Formats
+### Supported Formats
 
 `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`
 
-### 🔬 Advanced Configuration
+### Advanced Configuration
 
 All 40+ parameters are configurable via `PipelineConfig` or the web GUI. Key parameters:
 
@@ -209,7 +209,7 @@ All 40+ parameters are configurable via `PipelineConfig` or the web GUI. Key par
 | `enable_adaptive_intensity` | Intensity proportional to size | `True` | |
 | `max_refinement_passes` | Auto-refinement iterations | 3 | 1–10 |
 
-### 🗃 Project Structure
+### Project Structure
 
 ```
 person_anonymizer/
@@ -239,7 +239,7 @@ reports/                 # Audit reports
 requirements-sam3.txt    # SAM3 optional dependencies
 ```
 
-### 🛠 Development
+### Development
 
 ```bash
 source person_anonymizer/.venv/bin/activate
@@ -247,11 +247,11 @@ pytest tests/ -v
 ruff check person_anonymizer/
 ```
 
-### 🔒 Security
+### Security
 
 See [SECURITY.md](SECURITY.md) for full details on implemented protections.
 
-### 🧰 Technologies
+### Technologies
 
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection
 - [Meta SAM3](https://github.com/facebookresearch/segment-anything-3) — Pixel-precise segmentation (optional)
@@ -260,7 +260,7 @@ See [SECURITY.md](SECURITY.md) for full details on implemented protections.
 - [Flask](https://flask.palletsprojects.com/) — Web interface
 - [ffmpeg](https://ffmpeg.org/) — Video encoding
 
-### 📄 License
+### License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
 
@@ -277,7 +277,7 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 Tool CLI e web per l'anonimizzazione automatica di persone in video di sorveglianza. Progettato per telecamere fisse con lenti grandangolari, dove le persone possono apparire di piccole dimensioni (30–100 px).
 
-### 🧠 Backend SAM3 (Opzionale)
+### Backend SAM3 (Opzionale)
 
 Oltre alla pipeline YOLO predefinita, Person Anonymizer supporta **SAM3 (Segment Anything Model 3 di Meta)** come backend opzionale di detection e segmentazione, che produce maschere pixel-precise delle persone al posto dei bounding box.
 
@@ -318,7 +318,7 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 
 ---
 
-### 🚀 Funzionalità
+### Funzionalità
 
 - **Rilevamento YOLO v8 multi-scala** — inferenza a 4 scale (1.0x–2.5x) + sliding window 3x3 + Test-Time Augmentation
 - **Tracking ByteTrack** — ID persona persistenti tra frame consecutivi
@@ -331,7 +331,7 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 - **Correzione fish-eye opzionale** — undistortion ottica tramite calibrazione camera
 - **Output completo** — video H.264 anonimizzato, video debug, report CSV, annotazioni JSON riutilizzabili
 
-### 📦 Requisiti
+### Requisiti
 
 - Python 3.11+ (3.12+ obbligatorio per il backend SAM3)
 - ffmpeg (per encoding H.264 e preservazione audio)
@@ -351,7 +351,7 @@ brew install ffmpeg
 choco install ffmpeg
 ```
 
-### 🔧 Installazione
+### Installazione
 
 ```bash
 git clone https://github.com/AndreaBonn/PRIVATE__video-anonimyzer.git
@@ -362,7 +362,7 @@ source person_anonymizer/.venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 🎯 Utilizzo CLI
+### Utilizzo CLI
 
 ```bash
 # Standard — detection automatica + revisione manuale (consigliato)
@@ -398,7 +398,7 @@ python -m person_anonymizer.cli video.mp4 --review annotazioni.json --normalize
 | `--review` | Ricarica annotazioni da JSON | `None` |
 | `--normalize` | Normalizza poligoni (richiede --review) | `False` |
 
-### 🌐 Interfaccia Web
+### Interfaccia Web
 
 ```bash
 python -m person_anonymizer.web.app
@@ -420,7 +420,7 @@ La web GUI permette di:
 | `FLASK_HOST` | Host del server web | `127.0.0.1` |
 | `FLASK_PORT` | Porta del server web | `5000` |
 
-### ⚙️ Pipeline (5 fasi)
+### Pipeline (5 fasi)
 
 1. **Detection** — YOLO v8 multi-scala + sliding window + TTA, con motion detection opzionale
 2. **Auto-refinement** — Re-rendering + secondo passaggio YOLO, fino a 3 iterazioni
@@ -428,7 +428,7 @@ La web GUI permette di:
 4. **Rendering** — Applicazione oscuramento al video originale (intermedio FFV1 lossless)
 5. **Post-processing** — Encoding H.264 con ffmpeg, preservazione audio, salvataggio report
 
-### 📁 File di Output
+### File di Output
 
 | File | Descrizione |
 |------|-------------|
@@ -437,11 +437,11 @@ La web GUI permette di:
 | `*_report.csv` | Report per-frame (confidenza, detection, motion) |
 | `*_annotations.json` | Annotazioni complete (riutilizzabili con --review) |
 
-### 🗂 Formati Supportati
+### Formati Supportati
 
 `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`
 
-### 🔬 Configurazione Avanzata
+### Configurazione Avanzata
 
 Tutti i 40+ parametri sono configurabili tramite `PipelineConfig` o la web GUI. I principali:
 
@@ -459,7 +459,7 @@ Tutti i 40+ parametri sono configurabili tramite `PipelineConfig` o la web GUI. 
 | `enable_adaptive_intensity` | Intensità proporzionale alla dimensione | `True` | |
 | `max_refinement_passes` | Iterazioni auto-refinement | 3 | 1–10 |
 
-### 🗃 Struttura del Progetto
+### Struttura del Progetto
 
 ```
 person_anonymizer/
@@ -489,7 +489,7 @@ reports/                 # Report di audit
 requirements-sam3.txt    # Dipendenze opzionali SAM3
 ```
 
-### 🛠 Sviluppo
+### Sviluppo
 
 ```bash
 source person_anonymizer/.venv/bin/activate
@@ -497,11 +497,11 @@ pytest tests/ -v
 ruff check person_anonymizer/
 ```
 
-### 🔒 Sicurezza
+### Sicurezza
 
 Vedi [SECURITY.md](SECURITY.md) per i dettagli completi sulle protezioni implementate.
 
-### 🧰 Tecnologie
+### Tecnologie
 
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection
 - [Meta SAM3](https://github.com/facebookresearch/segment-anything-3) — Segmentazione pixel-precisa (opzionale)
@@ -510,7 +510,7 @@ Vedi [SECURITY.md](SECURITY.md) per i dettagli completi sulle protezioni impleme
 - [Flask](https://flask.palletsprojects.com/) — Interfaccia web
 - [ffmpeg](https://ffmpeg.org/) — Video encoding
 
-### 📄 Licenza
+### Licenza
 
 Questo progetto è rilasciato sotto [Apache License 2.0](LICENSE).
 
