@@ -20,7 +20,6 @@ from person_anonymizer.detection import (
     run_sliding_window,
 )
 
-
 # ============================================================
 # Helpers
 # ============================================================
@@ -39,7 +38,6 @@ def _make_fake_model(boxes_xyxy=None, conf=None):
     result_list.__iter__ = MagicMock(return_value=iter([]))
     result.__getitem__ = MagicMock(return_value=result_list)
 
-    boxes_mock = MagicMock()
     fake_boxes = []
     for i, (x1, y1, x2, y2) in enumerate(boxes_xyxy):
         box = MagicMock()
@@ -122,7 +120,9 @@ class TestRunSlidingWindow:
         motion_regions = [(25, 25, 75, 75)]
 
         # Act
-        all_boxes, hits = run_sliding_window(model, frame, patches, conf=0.5, motion_regions=motion_regions)
+        all_boxes, hits = run_sliding_window(
+            model, frame, patches, conf=0.5, motion_regions=motion_regions
+        )
 
         # Assert — solo prima patch processata
         assert len(all_boxes) == 1

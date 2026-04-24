@@ -6,14 +6,9 @@ normalize_annotations con poligoni reali (righe 157-181).
 """
 
 import logging
-from unittest.mock import patch
-
-import numpy as np
-import pytest
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.normalization import _merge_overlapping_rects, normalize_annotations
-
 
 # ============================================================
 # _merge_overlapping_rects — riga 91 (warning n > 100)
@@ -29,7 +24,7 @@ class TestMergeOverlappingRectsLargeInput:
 
         # Act
         with caplog.at_level(logging.WARNING, logger="person_anonymizer.normalization"):
-            result = _merge_overlapping_rects(rects)
+            _merge_overlapping_rects(rects)
 
         # Assert — warning loggato
         assert any("potenzialmente lenta" in msg or "performance" in msg.lower()
@@ -51,10 +46,12 @@ class TestMergeOverlappingRectsLargeInput:
 
         # Act
         with caplog.at_level(logging.WARNING, logger="person_anonymizer.normalization"):
-            result = _merge_overlapping_rects(rects)
+            _merge_overlapping_rects(rects)
 
         # Assert — nessun warning per n=100
-        warning_msgs = [m for m in caplog.messages if "potenzialmente" in m or "performance" in m.lower()]
+        warning_msgs = [
+            m for m in caplog.messages if "potenzialmente" in m or "performance" in m.lower()
+        ]
         assert len(warning_msgs) == 0
 
 

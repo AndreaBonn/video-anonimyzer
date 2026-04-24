@@ -18,7 +18,6 @@ from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import FisheyeContext
 from person_anonymizer.rendering import compute_review_stats, render_video
 
-
 # ============================================================
 # render_video — righe 71-95, 111-132
 # ============================================================

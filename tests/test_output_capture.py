@@ -6,12 +6,11 @@ phase_label detection, buffer residuo, rate-limit tqdm.
 """
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from person_anonymizer.web.output_capture import StdoutCapture, TqdmCapture
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -322,8 +321,9 @@ class TestTqdmCaptureInstallUninstall:
 
     def test_install_patches_pipeline_stages(self, mock_sse):
         # Arrange
-        import person_anonymizer.pipeline_stages as pa_stages
         import tqdm as tqdm_module
+
+        import person_anonymizer.pipeline_stages as pa_stages
 
         original = tqdm_module.tqdm
         capture = TqdmCapture(sse=mock_sse, job_id="job1")
@@ -390,7 +390,6 @@ class TestPatchedTqdmBehavior:
         capture = TqdmCapture(sse=mock_sse, job_id="job1")
         capture.install()
 
-        import time
 
         import tqdm as tqdm_module
 

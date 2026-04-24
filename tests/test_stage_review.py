@@ -71,7 +71,9 @@ class TestRunManualReviewStageCLI:
         # Arrange
         ctx = _make_ctx(review_state=None)
         input_annotations = _make_annotations()
-        updated_annotations = {**input_annotations, 99: {"auto": [], "manual": [], "intensities": []}}
+        updated_annotations = {
+            **input_annotations, 99: {"auto": [], "manual": [], "intensities": []}
+        }
         config = PipelineConfig()
         fe = FisheyeContext()
         review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 3}
@@ -170,7 +172,10 @@ class TestRunManualReviewStageWeb:
         config = PipelineConfig()
         fisheye = FisheyeContext()
 
-        with patch("person_anonymizer.stage_review.compute_review_stats", return_value={"frames_modified": 0, "added": 0, "removed": 0}):
+        with patch(
+            "person_anonymizer.stage_review.compute_review_stats",
+            return_value={"frames_modified": 0, "added": 0, "removed": 0},
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
             run_manual_review_stage(
                 ctx=ctx,
@@ -195,7 +200,10 @@ class TestRunManualReviewStageWeb:
         config = PipelineConfig()
         fisheye = FisheyeContext()
 
-        with patch("person_anonymizer.stage_review.compute_review_stats", return_value={"frames_modified": 0, "added": 0, "removed": 0}):
+        with patch(
+            "person_anonymizer.stage_review.compute_review_stats",
+            return_value={"frames_modified": 0, "added": 0, "removed": 0},
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
             run_manual_review_stage(
                 ctx=ctx,
@@ -222,7 +230,10 @@ class TestRunManualReviewStageWeb:
         config = PipelineConfig()
         fisheye = FisheyeContext()
 
-        with patch("person_anonymizer.stage_review.compute_review_stats", return_value={"frames_modified": 0, "added": 0, "removed": 0}):
+        with patch(
+            "person_anonymizer.stage_review.compute_review_stats",
+            return_value={"frames_modified": 0, "added": 0, "removed": 0},
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
             result_ann, _ = run_manual_review_stage(
                 ctx=ctx,

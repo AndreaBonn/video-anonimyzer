@@ -6,7 +6,7 @@ Testa le funzioni di I/O senza dipendenze da cv2/YOLO.
 
 import json
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -478,9 +478,11 @@ class TestSaveOutputsCleanup:
 
         (tmp_path / "temp.avi").write_bytes(b"\x00" * 8)
 
-        with patch("person_anonymizer.output.shutil.copy"), \
-             patch("person_anonymizer.output.os.remove", side_effect=OSError("Permission denied")), \
-             patch("person_anonymizer.output.os.path.exists", return_value=True):
+        with (
+            patch("person_anonymizer.output.shutil.copy"),
+            patch("person_anonymizer.output.os.remove", side_effect=OSError("Permission denied")),
+            patch("person_anonymizer.output.os.path.exists", return_value=True),
+        ):
 
             # Non deve sollevare
             save_outputs(ctx, result, config, "input.mp4", paths, meta)

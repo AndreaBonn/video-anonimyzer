@@ -6,14 +6,12 @@ config invalida, yolo path traversal, stop_event), _build_config.
 """
 
 import threading
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from person_anonymizer.web.pipeline_runner import PipelineRunner, _build_config
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

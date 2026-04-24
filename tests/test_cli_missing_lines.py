@@ -11,8 +11,6 @@ Coprire questa riga richiede eseguire il modulo come script principale.
 import subprocess
 import sys
 
-import pytest
-
 
 class TestCliMainBlock:
     """Verifica che il blocco __main__ chiami main()."""

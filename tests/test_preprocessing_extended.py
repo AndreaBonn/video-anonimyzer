@@ -5,24 +5,19 @@ Copre: build_undistortion_maps (righe 23, 26, 29, 34),
 undistort_frame (riga 34), MotionDetector.get_motion_regions edge cases (riga 108).
 """
 
-from unittest.mock import MagicMock, patch
+import importlib.util
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
-try:
-    import cv2
-
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
+CV2_AVAILABLE = importlib.util.find_spec("cv2") is not None
 
 from person_anonymizer.preprocessing import (
     MotionDetector,
     build_undistortion_maps,
     undistort_frame,
 )
-
 
 # ============================================================
 # build_undistortion_maps — righe 23, 26, 29
@@ -146,7 +141,9 @@ class TestUndistortFrame:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         expected = np.ones((100, 100, 3), dtype=np.uint8) * 42
 
-        with patch("person_anonymizer.preprocessing.cv2.remap", return_value=expected) as mock_remap:
+        with patch(
+            "person_anonymizer.preprocessing.cv2.remap", return_value=expected
+        ) as mock_remap:
             # Act
             result = undistort_frame(frame, map1, map2)
 

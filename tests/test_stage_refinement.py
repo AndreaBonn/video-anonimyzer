@@ -5,9 +5,7 @@ Mock di render_video, run_post_render_check, filter_artifact_detections.
 """
 
 import threading
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import FisheyeContext

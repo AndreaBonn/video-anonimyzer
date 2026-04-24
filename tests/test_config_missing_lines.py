@@ -16,7 +16,6 @@ import pytest
 
 from person_anonymizer.config import PipelineConfig
 
-
 # ---------------------------------------------------------------------------
 # TestPipelineConfigPersonPadding
 # ---------------------------------------------------------------------------
@@ -240,8 +239,9 @@ class TestFisheyeContextUndistort:
 
     def test_undistort_applies_remap_when_enabled_with_maps(self):
         # Arrange — line 113 (if branch) e 115 (cv2.remap return)
+        from unittest.mock import patch
+
         import numpy as np
-        from unittest.mock import patch, MagicMock
 
         from person_anonymizer.models import FisheyeContext
 

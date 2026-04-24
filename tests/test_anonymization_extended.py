@@ -16,8 +16,6 @@ except ImportError:
     CV2_AVAILABLE = False
 
 from person_anonymizer.anonymization import box_to_polygon, obscure_polygon
-from person_anonymizer.config import PipelineConfig
-
 
 # ============================================================
 # obscure_polygon — righe 96-97 (w == 0 o h == 0)
@@ -71,7 +69,6 @@ class TestObscurePolygonEdgeCases:
     def test_polygon_at_frame_edge_clamped_still_processed(self):
         # Arrange — poligono valido anche se a bordo frame
         frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        original = frame.copy()
         # Poligono nell'angolo in basso a destra
         points = [(90, 90), (100, 90), (100, 100), (90, 100)]
 
@@ -125,7 +122,6 @@ class TestBoxToPolygonEdgeCases:
     def test_x2_not_clamped_when_frame_w_none(self):
         # Arrange — frame_w=None → x2 non viene clamped
         x1, y1, x2, y2 = 80, 10, 110, 50  # x2 > frame_w ipotetico
-        padding = 0
 
         # Act
         result = box_to_polygon(x1, y1, x2, y2, padding=0, frame_w=None, frame_h=None)
@@ -137,7 +133,6 @@ class TestBoxToPolygonEdgeCases:
     def test_y2_not_clamped_when_frame_h_none(self):
         # Arrange — frame_h=None → y2 non viene clamped
         x1, y1, x2, y2 = 10, 80, 50, 120  # y2 > frame_h ipotetico
-        padding = 0
 
         # Act
         result = box_to_polygon(x1, y1, x2, y2, padding=0, frame_w=None, frame_h=None)
