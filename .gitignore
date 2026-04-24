@@ -109,6 +109,11 @@ desktop.ini
 *_report.csv
 *_annotations.json
 
+# Coverage reports
+coverage/
+.coverage
+htmlcov/
+
 # Documentazione interna (non versionata)
 docs/
 reports/

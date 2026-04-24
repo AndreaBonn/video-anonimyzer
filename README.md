@@ -8,6 +8,7 @@ Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacc
 
 [![CI](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AndreaBonn/video-anonimyzer/main/badges/test-badge.json)](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/AndreaBonn/video-anonimyzer/main/badges/coverage-badge.json)](https://github.com/AndreaBonn/video-anonimyzer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Security Policy](https://img.shields.io/badge/security-policy-green.svg)](SECURITY.md)

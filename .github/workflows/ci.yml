@@ -42,6 +42,10 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --junitxml=test-results.xml
 
+      - name: Run tests with coverage
+        if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
+        run: pytest tests/ --cov=person_anonymizer --cov-report=json:coverage/coverage-summary.json --no-header -q
+
       - name: Generate test badge
         if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
         run: |
@@ -64,11 +68,29 @@ jobs:
               json.dump(badge, f)
           "
 
-      - name: Commit badge
+      - name: Generate coverage badge
+        if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
+        run: |
+          python -c "
+          import json, os
+          summary_path = 'coverage/coverage-summary.json'
+          if not os.path.exists(summary_path):
+              badge = {'schemaVersion': 1, 'label': 'coverage', 'message': 'N/A', 'color': 'lightgrey'}
+          else:
+              with open(summary_path) as f:
+                  data = json.load(f)
+              pct = round(data['totals']['percent_covered'], 1)
+              color = 'brightgreen' if pct >= 90 else 'green' if pct >= 80 else 'yellow' if pct >= 60 else 'red'
+              badge = {'schemaVersion': 1, 'label': 'coverage', 'message': f'{pct}%', 'color': color}
+          with open('badges/coverage-badge.json', 'w') as f:
+              json.dump(badge, f)
+          "
+
+      - name: Commit badges
         if: always() && matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add badges/test-badge.json
+          git add badges/test-badge.json badges/coverage-badge.json
           git diff --cached --quiet || git commit -m "ci: update test badge [skip ci]"
           git push
