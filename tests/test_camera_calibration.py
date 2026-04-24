@@ -3,10 +3,8 @@
 Mock pesante su cv2 e numpy per evitare dipendenze da immagini fisiche.
 """
 
-import argparse
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -15,7 +13,6 @@ from person_anonymizer.camera_calibration import (
     calibrate_camera,
     find_chessboard_corners,
 )
-
 
 # ─── find_chessboard_corners ────────────────────────────────────
 
@@ -188,7 +185,9 @@ class TestCalibrateCamera:
         img_pts = [np.zeros((54, 1, 2), dtype=np.float32)]
         image_size = (1280, 720)
 
-        with patch("cv2.calibrateCamera", return_value=(0.1, mock_matrix, mock_dist, [], [])) as mock_cc:
+        with patch(
+            "cv2.calibrateCamera", return_value=(0.1, mock_matrix, mock_dist, [], [])
+        ) as mock_cc:
             calibrate_camera(obj_pts, img_pts, image_size)
 
         mock_cc.assert_called_once_with(obj_pts, img_pts, image_size, None, None)
@@ -334,7 +333,7 @@ class TestMainGuard:
                 # Simula esecuzione come __main__
                 try:
                     cc_module.main()
-                except (FileNotFoundError, ValueError) as e:
+                except (FileNotFoundError, ValueError):
                     sys.exit(1)
             except SystemExit:
                 pass

@@ -12,7 +12,6 @@ import pytest
 
 from person_anonymizer.web.review_state import ReviewState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -358,7 +357,6 @@ class TestReviewStateGetFrameJpeg:
 
     def test_get_frame_jpeg_returns_none_when_read_fails(self):
         # Arrange
-        import numpy as np
 
         state, mock_cap = _make_review_state_with_mock_cap()
         mock_cap.read.return_value = (False, None)
@@ -416,7 +414,9 @@ class TestReviewStateThreadSafety:
 
     def test_concurrent_update_and_get_annotations(self):
         # Arrange
-        state, _ = _make_review_state_with_mock_cap(annotations={i: {"auto": [], "manual": [], "intensities": []} for i in range(10)})
+        state, _ = _make_review_state_with_mock_cap(
+            annotations={i: {"auto": [], "manual": [], "intensities": []} for i in range(10)}
+        )
         errors = []
 
         def writer():

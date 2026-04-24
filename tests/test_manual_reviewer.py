@@ -3,8 +3,7 @@
 Mock pesante su cv2 per evitare display fisico.
 """
 
-from copy import deepcopy
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -22,7 +21,6 @@ from person_anonymizer.manual_reviewer import (
     run_manual_review,
 )
 from person_anonymizer.models import FisheyeContext
-
 
 # ─── Fixtures ───────────────────────────────────────────────────
 
@@ -142,7 +140,7 @@ class TestGetFrame:
         mock_fisheye.undistort.return_value = undistorted
         reviewer.fisheye = mock_fisheye
         reviewer._cached_frame_idx = -1  # invalida cache
-        result = reviewer._get_frame(0)
+        reviewer._get_frame(0)
         mock_fisheye.undistort.assert_called_once()
 
 
@@ -447,7 +445,9 @@ class TestManualReviewerRun:
             patch("cv2.imshow"),
             patch("cv2.destroyAllWindows"),
             patch.object(reviewer.cap, "release"),
-            patch.object(reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)),
+            patch.object(
+                reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
+            ),
             patch("cv2.waitKey", side_effect=[KEY_NONE & 0xFF, ord("q") & 0xFF]),
         ):
             annotations, stats = reviewer.run()
@@ -464,7 +464,9 @@ class TestManualReviewerRun:
             patch("cv2.imshow"),
             patch("cv2.destroyAllWindows"),
             patch.object(reviewer.cap, "release"),
-            patch.object(reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)),
+            patch.object(
+                reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
+            ),
             patch("cv2.waitKey", return_value=ord("q") & 0xFF),
         ):
             annotations, _ = reviewer.run()
@@ -477,7 +479,9 @@ class TestManualReviewerRun:
             patch("cv2.imshow"),
             patch("cv2.destroyAllWindows") as mock_destroy,
             patch.object(reviewer.cap, "release") as mock_release,
-            patch.object(reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)),
+            patch.object(
+                reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
+            ),
             patch("cv2.waitKey", return_value=ord("q") & 0xFF),
         ):
             reviewer.run()

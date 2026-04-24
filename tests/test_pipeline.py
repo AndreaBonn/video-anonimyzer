@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from person_anonymizer.config import PipelineConfig
-from person_anonymizer.models import FisheyeContext, PipelineContext, PipelineInputError
+from person_anonymizer.models import PipelineContext, PipelineInputError
 
 
 def _make_ctx(tmp_path, **kwargs):

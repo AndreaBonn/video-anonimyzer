@@ -13,15 +13,12 @@ Pattern: AAA. Naming: test_<funzione>_<scenario>_<risultato>.
 import io
 import json
 import queue
-import threading
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from person_anonymizer.web.app import app
 from person_anonymizer.web.extensions import limiter
-
 
 # ---------------------------------------------------------------------------
 # Fixture condivisa
@@ -506,7 +503,9 @@ class TestStartPipelineExtended:
         fake_video.write_bytes(b"\x00\x00\x00 ftyp" + b"\x00" * 100)
         try:
             with patch.object(
-                app.pipeline_runner, "start", return_value=(False, "Una pipeline è già in esecuzione")
+                app.pipeline_runner,
+                "start",
+                return_value=(False, "Una pipeline è già in esecuzione"),
             ):
                 payload = {
                     "job_id": job_id,
@@ -735,7 +734,8 @@ class TestRoutesReview:
             assert resp.status_code == 200
             # Verifica che get_frame_jpeg sia stato chiamato con max_width <= 1920
             call_args = rs.get_frame_jpeg.call_args
-            assert call_args.kwargs.get("max_width", call_args.args[1] if len(call_args.args) > 1 else 1920) <= 1920
+            fallback = call_args.args[1] if len(call_args.args) > 1 else 1920
+            assert call_args.kwargs.get("max_width", fallback) <= 1920
 
     # --- /api/review/annotations ---
 
@@ -1336,6 +1336,7 @@ class TestCleanupOldJobs:
         """_cleanup_old_jobs rimuove directory più vecchie di max_age_seconds."""
         # Arrange
         import time
+
         from person_anonymizer.web.app import _cleanup_old_jobs
 
         # Crea una directory "vecchia" settando mtime nel passato

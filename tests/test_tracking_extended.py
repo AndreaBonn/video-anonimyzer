@@ -14,7 +14,6 @@ import pytest
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.tracking import TemporalSmoother, create_tracker, update_tracker
 
-
 # ============================================================
 # create_tracker — righe 36-55
 # ============================================================
@@ -125,7 +124,9 @@ class TestUpdateTracker:
         frame_shape = (100, 200, 3)
 
         # Act
-        result = update_tracker(tracker, nms_boxes=[[10, 20, 50, 80, 0.85]], frame_shape=frame_shape)
+        result = update_tracker(
+            tracker, nms_boxes=[[10, 20, 50, 80, 0.85]], frame_shape=frame_shape
+        )
 
         # Assert — result contiene (track_id, x1, y1, x2, y2, conf)
         assert len(result) == 1

@@ -6,8 +6,7 @@ encode_without_audio (successo, fallback copia), run_post_render_check.
 Mock: ffmpeg, cv2.VideoCapture, shutil.copy.
 """
 
-import logging
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -18,7 +17,6 @@ from person_anonymizer.postprocessing import (
     encode_without_audio,
     run_post_render_check,
 )
-
 
 # ============================================================
 # encode_with_audio — righe 43-80
