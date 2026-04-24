@@ -11,13 +11,13 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-CV2_AVAILABLE = importlib.util.find_spec("cv2") is not None
-
 from person_anonymizer.preprocessing import (
     MotionDetector,
     build_undistortion_maps,
     undistort_frame,
 )
+
+CV2_AVAILABLE = importlib.util.find_spec("cv2") is not None
 
 # ============================================================
 # build_undistortion_maps — righe 23, 26, 29
