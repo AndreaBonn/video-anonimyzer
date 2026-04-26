@@ -15,6 +15,8 @@ Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacc
 
 [English](#english) | [Italiano](#italiano)
 
+![Person Anonymizer Web Interface](./assets/web-interface-hero.png)
+
 </div>
 
 ---
@@ -70,6 +72,8 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 ---
 
 ### Features
+
+![Advanced features toggles](./assets/advanced-features.png)
 
 - **Multi-scale YOLO v8 detection** — inference at 4 scales (1.0x–2.5x) + 3x3 sliding window + Test-Time Augmentation
 - **ByteTrack tracking** — persistent person IDs across consecutive frames
@@ -173,6 +177,8 @@ The web GUI allows you to:
 
 ### Pipeline (5 stages)
 
+![Pipeline phases](./assets/pipeline-phases.png)
+
 1. **Detection** — YOLO v8 multi-scale + sliding window + TTA, with optional motion detection
 2. **Auto-refinement** — Re-render + second YOLO pass, up to 3 iterations
 3. **Manual review** — Interactive interface (OpenCV or web) for corrections
@@ -193,6 +199,8 @@ The web GUI allows you to:
 `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`
 
 ### Advanced Configuration
+
+![Detection settings](./assets/detection-settings.png)
 
 All 40+ parameters are configurable via `PipelineConfig` or the web GUI. Key parameters:
 
@@ -321,6 +329,8 @@ python -m person_anonymizer.cli video.mp4 --backend sam3
 
 ### Funzionalità
 
+![Toggle funzionalità avanzate](./assets/advanced-features.png)
+
 - **Rilevamento YOLO v8 multi-scala** — inferenza a 4 scale (1.0x–2.5x) + sliding window 3x3 + Test-Time Augmentation
 - **Tracking ByteTrack** — ID persona persistenti tra frame consecutivi
 - **Temporal smoothing EMA** — stabilizza i bounding box con media mobile; ghost box per gestire occlusioni temporanee
@@ -423,6 +433,8 @@ La web GUI permette di:
 
 ### Pipeline (5 fasi)
 
+![Fasi pipeline](./assets/pipeline-phases.png)
+
 1. **Detection** — YOLO v8 multi-scala + sliding window + TTA, con motion detection opzionale
 2. **Auto-refinement** — Re-rendering + secondo passaggio YOLO, fino a 3 iterazioni
 3. **Revisione manuale** — Interfaccia interattiva (OpenCV o web) per correzioni
@@ -443,6 +455,8 @@ La web GUI permette di:
 `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`
 
 ### Configurazione Avanzata
+
+![Impostazioni rilevamento](./assets/detection-settings.png)
 
 Tutti i 40+ parametri sono configurabili tramite `PipelineConfig` o la web GUI. I principali:
 
