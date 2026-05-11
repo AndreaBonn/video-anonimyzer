@@ -1,6 +1,6 @@
 <div align="center">
 
-# Person Anonymizer
+# Person Anonymizer by Bonn
 
 **Automatic person anonymization in surveillance videos using YOLO v8 multi-scale detection, ByteTrack tracking, and temporal smoothing.**
 
