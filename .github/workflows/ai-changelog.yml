@@ -1,0 +1,22 @@
+name: AI Changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    name: AI Changelog Generator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: AndreaBonn/ai-changelog-generator@v1
+        with:
+          github_token: '${{ secrets.GITHUB_TOKEN }}'
+          llm_provider: 'groq,gemini,openai'
+          llm_api_key: '${{ secrets.GROQ_API_KEY }},${{ secrets.GEMINI_API_KEY }},${{ secrets.OPENAI_API_KEY }}'
+          language: 'italian'
+          update_changelog_file: 'true'
