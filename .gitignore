@@ -115,7 +115,8 @@ coverage/
 htmlcov/
 
 # Documentazione interna (non versionata)
-docs/
+docs/*
+!docs/ARCHITECTURE.md
 reports/
 
 # Playwright MCP cache

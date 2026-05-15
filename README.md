@@ -30,6 +30,64 @@ Created by <a href="https://andreabonn.github.io/" target="_blank">Andrea Bonacc
 
 CLI and web tool for automatic person anonymization in surveillance videos. Designed for fixed cameras with wide-angle lenses where people may appear small (30–100 px).
 
+### Architecture
+
+```mermaid
+%%{init: {'theme': 'default'}}%%
+graph LR
+  video["Video File"] --> pipeline["Pipeline<br/>Orchestrator"]
+
+  subgraph detection_layer["Detection"]
+    direction TB
+    backend_factory["Backend Factory"]
+    yolo["YOLO v8"]
+    sam3["SAM3 (optional)"]
+    backend_factory --> yolo
+    backend_factory --> sam3
+  end
+
+  subgraph processing_layer["Processing"]
+    direction TB
+    tracking["ByteTrack"]
+    smoother["Temporal Smoother"]
+    clahe["CLAHE Preprocessing"]
+  end
+
+  subgraph web_layer["Web Interface"]
+    direction TB
+    flask["Flask App"]
+    sse["SSE Manager"]
+    review_st["Review State"]
+    runner["Pipeline Runner"]
+  end
+
+  pipeline --> backend_factory
+  pipeline --> clahe
+  clahe --> tracking
+  tracking --> smoother
+  smoother --> anon["Anonymization Engine"]
+  anon --> output_video["Anonymized Video"]
+  anon --> debug_video["Debug Video"]
+  anon --> csv_report["CSV Report"]
+  anon --> json_annot["JSON Annotations"]
+
+  cli["CLI"] --> pipeline
+  flask --> runner
+  runner --> pipeline
+  sse --> flask
+  review_st --> runner
+
+  classDef core fill:#2563eb,stroke:#1d4ed8,color:#fff
+  classDef data fill:#d97706,stroke:#b45309,color:#fff
+  classDef ext fill:#6b7280,stroke:#4b5563,color:#fff
+  classDef engine fill:#059669,stroke:#047857,color:#fff
+
+  class pipeline,backend_factory core
+  class yolo,sam3,tracking,smoother,clahe engine
+  class video,output_video,debug_video,csv_report,json_annot data
+  class cli,flask,sse,review_st,runner ext
+```
+
 ### SAM3 Backend (Optional)
 
 In addition to the default YOLO pipeline, Person Anonymizer supports **SAM3 (Segment Anything Model 3 by Meta)** as an optional detection/segmentation backend, providing pixel-precise person masks instead of bounding boxes.
@@ -179,6 +237,36 @@ The web GUI allows you to:
 
 ![Pipeline phases](./assets/pipeline-phases.png)
 
+```mermaid
+%%{init: {'theme': 'default'}}%%
+graph TD
+  input["Video Input"] --> detect["1. Detection<br/>YOLO multi-scale + TTA"]
+  detect --> check_refine{"Post-render<br/>check?"}
+  check_refine -->|"Yes"| refine["2. Auto-Refinement<br/>up to 3 passes"]
+  check_refine -->|"No"| check_review
+  refine --> new_detect{"New detections?"}
+  new_detect -->|"Yes"| refine
+  new_detect -->|"No"| check_review{"Mode =<br/>manual?"}
+  check_review -->|"Yes"| review["3. Manual Review<br/>Web or CLI"]
+  check_review -->|"No"| render
+  review --> render["4. Rendering<br/>FFV1 lossless"]
+  render --> postproc["5. Post-processing<br/>H.264 + audio"]
+  postproc --> out_vid["Anonymized .mp4"]
+  postproc --> out_debug["Debug .mp4"]
+  postproc --> out_csv["Report .csv"]
+  postproc --> out_json["Annotations .json"]
+
+  classDef core fill:#2563eb,stroke:#1d4ed8,color:#fff
+  classDef data fill:#d97706,stroke:#b45309,color:#fff
+  classDef ext fill:#6b7280,stroke:#4b5563,color:#fff
+  classDef engine fill:#059669,stroke:#047857,color:#fff
+
+  class input data
+  class detect,refine,review,render,postproc core
+  class check_refine,new_detect,check_review engine
+  class out_vid,out_debug,out_csv,out_json data
+```
+
 1. **Detection** — YOLO v8 multi-scale + sliding window + TTA, with optional motion detection
 2. **Auto-refinement** — Re-render + second YOLO pass, up to 3 iterations
 3. **Manual review** — Interactive interface (OpenCV or web) for corrections
@@ -256,6 +344,10 @@ pytest tests/ -v
 ruff check person_anonymizer/
 ```
 
+### Architecture Details
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed technical diagrams: detection pipeline internals, web review sequence, backend factory decision tree.
+
 ### Security
 
 See [SECURITY.md](SECURITY.md) for full details on implemented protections.
@@ -285,6 +377,64 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 ### Cosa fa
 
 Tool CLI e web per l'anonimizzazione automatica di persone in video di sorveglianza. Progettato per telecamere fisse con lenti grandangolari, dove le persone possono apparire di piccole dimensioni (30–100 px).
+
+### Architettura
+
+```mermaid
+%%{init: {'theme': 'default'}}%%
+graph LR
+  video["File Video"] --> pipeline["Orchestratore<br/>Pipeline"]
+
+  subgraph detection_layer["Rilevamento"]
+    direction TB
+    backend_factory["Backend Factory"]
+    yolo["YOLO v8"]
+    sam3["SAM3 (opzionale)"]
+    backend_factory --> yolo
+    backend_factory --> sam3
+  end
+
+  subgraph processing_layer["Elaborazione"]
+    direction TB
+    tracking["ByteTrack"]
+    smoother["Temporal Smoother"]
+    clahe["Pre-elaborazione CLAHE"]
+  end
+
+  subgraph web_layer["Interfaccia Web"]
+    direction TB
+    flask["Flask App"]
+    sse["SSE Manager"]
+    review_st["Review State"]
+    runner["Pipeline Runner"]
+  end
+
+  pipeline --> backend_factory
+  pipeline --> clahe
+  clahe --> tracking
+  tracking --> smoother
+  smoother --> anon["Motore Anonimizzazione"]
+  anon --> output_video["Video Anonimizzato"]
+  anon --> debug_video["Video Debug"]
+  anon --> csv_report["Report CSV"]
+  anon --> json_annot["Annotazioni JSON"]
+
+  cli["CLI"] --> pipeline
+  flask --> runner
+  runner --> pipeline
+  sse --> flask
+  review_st --> runner
+
+  classDef core fill:#2563eb,stroke:#1d4ed8,color:#fff
+  classDef data fill:#d97706,stroke:#b45309,color:#fff
+  classDef ext fill:#6b7280,stroke:#4b5563,color:#fff
+  classDef engine fill:#059669,stroke:#047857,color:#fff
+
+  class pipeline,backend_factory core
+  class yolo,sam3,tracking,smoother,clahe engine
+  class video,output_video,debug_video,csv_report,json_annot data
+  class cli,flask,sse,review_st,runner ext
+```
 
 ### Backend SAM3 (Opzionale)
 
@@ -435,6 +585,36 @@ La web GUI permette di:
 
 ![Fasi pipeline](./assets/pipeline-phases.png)
 
+```mermaid
+%%{init: {'theme': 'default'}}%%
+graph TD
+  input["Video Input"] --> detect["1. Rilevamento<br/>YOLO multi-scala + TTA"]
+  detect --> check_refine{"Verifica<br/>post-render?"}
+  check_refine -->|"Si"| refine["2. Auto-Refinement<br/>fino a 3 passaggi"]
+  check_refine -->|"No"| check_review
+  refine --> new_detect{"Nuove detection?"}
+  new_detect -->|"Si"| refine
+  new_detect -->|"No"| check_review{"Modalita =<br/>manuale?"}
+  check_review -->|"Si"| review["3. Revisione Manuale<br/>Web o CLI"]
+  check_review -->|"No"| render
+  review --> render["4. Rendering<br/>FFV1 lossless"]
+  render --> postproc["5. Post-elaborazione<br/>H.264 + audio"]
+  postproc --> out_vid["Video .mp4"]
+  postproc --> out_debug["Debug .mp4"]
+  postproc --> out_csv["Report .csv"]
+  postproc --> out_json["Annotazioni .json"]
+
+  classDef core fill:#2563eb,stroke:#1d4ed8,color:#fff
+  classDef data fill:#d97706,stroke:#b45309,color:#fff
+  classDef ext fill:#6b7280,stroke:#4b5563,color:#fff
+  classDef engine fill:#059669,stroke:#047857,color:#fff
+
+  class input data
+  class detect,refine,review,render,postproc core
+  class check_refine,new_detect,check_review engine
+  class out_vid,out_debug,out_csv,out_json data
+```
+
 1. **Detection** — YOLO v8 multi-scala + sliding window + TTA, con motion detection opzionale
 2. **Auto-refinement** — Re-rendering + secondo passaggio YOLO, fino a 3 iterazioni
 3. **Revisione manuale** — Interfaccia interattiva (OpenCV o web) per correzioni
@@ -511,6 +691,10 @@ source person_anonymizer/.venv/bin/activate
 pytest tests/ -v
 ruff check person_anonymizer/
 ```
+
+### Dettagli Architetturali
+
+Vedi [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) per diagrammi tecnici dettagliati: internals della pipeline di detection, sequenza review web, decision tree backend factory.
 
 ### Sicurezza
 
