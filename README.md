@@ -367,6 +367,16 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 > **Note**: This project depends on [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) which is licensed under AGPL-3.0. If you use this software as a network service, the AGPL requires that the complete source code be made available. Since this project is already open source, there is no practical conflict. For commercial/proprietary use of YOLO, see [Ultralytics Licensing](https://www.ultralytics.com/license).
 
+### Support the project
+
+Person Anonymizer is free to use. If it helps you and you want to give something back, you can leave a tip via PayPal. The amount is up to you and it is entirely optional.
+
+<div align="center">
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white&style=for-the-badge)](https://paypal.me/AndreaBonacci19)
+
+</div>
+
 ---
 
 <a id="italiano"></a>
@@ -714,3 +724,13 @@ Vedi [SECURITY.md](SECURITY.md) per i dettagli completi sulle protezioni impleme
 Questo progetto è rilasciato sotto [Apache License 2.0](LICENSE).
 
 > **Nota**: Questo progetto dipende da [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics), rilasciato sotto AGPL-3.0. Se si utilizza questo software come servizio di rete, l'AGPL richiede che il codice sorgente completo sia reso disponibile. Essendo questo progetto già open source, non c'è conflitto pratico. Per uso commerciale/proprietario di YOLO, vedere [Ultralytics Licensing](https://www.ultralytics.com/license).
+
+### Sostieni il progetto
+
+Person Anonymizer è gratuito. Se ti è utile e vuoi contribuire, puoi lasciare un'offerta tramite PayPal. L'importo lo scegli tu ed è del tutto facoltativo.
+
+<div align="center">
+
+[![Dona con PayPal](https://img.shields.io/badge/Dona-PayPal-00457C?logo=paypal&logoColor=white&style=for-the-badge)](https://paypal.me/AndreaBonacci19)
+
+</div>
