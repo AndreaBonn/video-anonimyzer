@@ -71,6 +71,26 @@ def _make_ctx(**kwargs):
 class TestLoadAnnotationsFromJson:
     """Test per load_annotations_from_json."""
 
+    @pytest.mark.parametrize(
+        "content, cause",
+        [
+            (b"{not json", json.JSONDecodeError),
+            (b' {"frames": {"abc": {}}}', ValueError),
+            (b"[]", AttributeError),
+            (b"\xff", UnicodeDecodeError),
+        ],
+    )
+    def test_invalid_json_raises_input_error_without_directory(self, tmp_path, content, cause):
+        json_file = tmp_path / "invalid.json"
+        json_file.write_bytes(content)
+
+        with pytest.raises(PipelineInputError) as exc_info:
+            load_annotations_from_json(str(json_file), PipelineConfig())
+
+        assert str(exc_info.value).startswith("JSON annotazioni non valido: invalid.json: ")
+        assert str(tmp_path) not in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, cause)
+
     def test_file_not_found_raises_error(self, tmp_path):
         # Arrange
         config = PipelineConfig()

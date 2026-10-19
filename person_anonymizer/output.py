@@ -38,20 +38,30 @@ def load_annotations_from_json(review_json, config):
         raise PipelineInputError(f"File JSON non trovato: {review_json}")
 
     print(f"\n[FASE 1/5] Caricamento annotazioni da {Path(review_json).name}...")
-    with open(review_json) as f:
-        json_data = json.load(f)
+    try:
+        with open(review_json) as f:
+            json_data = json.load(f)
 
-    annotations = {}
-    for fidx_str, frame_ann in json_data.get("frames", {}).items():
-        fidx = int(fidx_str)
-        auto_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("auto", [])]
-        manual_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("manual", [])]
-        intensities = []
-        for poly in auto_polys:
-            ys = [pt[1] for pt in poly]
-            box_h = max(ys) - min(ys) if ys else 0
-            intensities.append(resolve_intensity(config, box_h))
-        annotations[fidx] = {"auto": auto_polys, "manual": manual_polys, "intensities": intensities}
+        annotations = {}
+        for fidx_str, frame_ann in json_data.get("frames", {}).items():
+            fidx = int(fidx_str)
+            auto_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("auto", [])]
+            manual_polys = [[tuple(pt) for pt in poly] for poly in frame_ann.get("manual", [])]
+            intensities = []
+            for poly in auto_polys:
+                ys = [pt[1] for pt in poly]
+                box_h = max(ys) - min(ys) if ys else 0
+                intensities.append(resolve_intensity(config, box_h))
+            annotations[fidx] = {
+                "auto": auto_polys,
+                "manual": manual_polys,
+                "intensities": intensities,
+            }
+
+    except (ValueError, AttributeError, TypeError) as err:
+        raise PipelineInputError(
+            f"JSON annotazioni non valido: {Path(review_json).name}: {err}"
+        ) from err
 
     total_polys = sum(
         len(a.get("auto", [])) + len(a.get("manual", [])) for a in annotations.values()

@@ -8,6 +8,7 @@ import pytest
 
 from person_anonymizer.cli import main, parse_args
 from person_anonymizer.models import PipelineContext, PipelineError, PipelineInputError
+from person_anonymizer.output import load_annotations_from_json
 
 
 class TestParseArgs:
@@ -143,6 +144,26 @@ class TestParseArgs:
 
 class TestMain:
     """Test per main() — gestione errori."""
+
+    def test_invalid_review_exits_like_missing_review(self, tmp_path, capsys):
+        invalid_file = tmp_path / "invalid.json"
+        invalid_file.write_text("{not json")
+        exit_codes = []
+
+        def load_review(ctx, config):
+            return load_annotations_from_json(ctx.review, config)
+
+        for review_file in (tmp_path / "missing.json", invalid_file):
+            with (
+                patch("sys.argv", ["cli", "video.mp4", "--review", str(review_file)]),
+                patch("person_anonymizer.pipeline.run_pipeline", side_effect=load_review),
+                pytest.raises(SystemExit) as exc_info,
+            ):
+                main()
+            exit_codes.append(exc_info.value.code)
+
+        assert exit_codes == [1, 1]
+        assert "non valido" in capsys.readouterr().out
 
     @patch(
         "person_anonymizer.pipeline.run_pipeline",
