@@ -56,6 +56,8 @@ _CLEANUP_MAX_AGE_S = 3600
 _MAX_ANNOTATIONS_BYTES = 100 * 1024 * 1024
 _SSE_MAX_DURATION_S = 7200  # 2 ore max
 _SSE_HEARTBEAT_S = 60
+_FALLBACK_VIDEO_STEM = "video"
+_FALLBACK_ANNOTATIONS_NAME = "annotations.json"
 
 
 def _start_cleanup_thread(interval=600):
@@ -146,13 +148,15 @@ def upload_video():
     if not has_valid_video_signature(header, ext):
         return jsonify({"error": "Il contenuto del file non corrisponde all'estensione"}), 400
 
+    safe_name = secure_filename(f.filename)
+    # secure_filename drops non-ASCII characters ("日本.mp4" -> "mp4"): keep a
+    # name with the extension the pipeline checks
+    if Path(safe_name).suffix.lower() != ext:
+        safe_name = f"{_FALLBACK_VIDEO_STEM}{ext}"
+
     job_id = uuid.uuid4().hex[:12]
     job_dir = UPLOAD_DIR / job_id
     job_dir.mkdir(exist_ok=True)
-
-    safe_name = secure_filename(f.filename)
-    if not safe_name:
-        return jsonify({"error": "Nome file non valido"}), 400
     dest = job_dir / safe_name
     f.save(str(dest))
 
@@ -178,11 +182,14 @@ def upload_json():
         return jsonify({"error": "Nessun file JSON inviato"}), 400
 
     f = request.files["json_file"]
-    safe_name = secure_filename(f.filename or "")
-    if not safe_name:
+    if not f.filename:
         return jsonify({"error": "Nome file non valido"}), 400
-    if not safe_name.endswith(".json"):
+    if Path(f.filename).suffix != ".json":
         return jsonify({"error": "File deve essere .json"}), 400
+    safe_name = secure_filename(f.filename)
+    # Same non-ASCII loss as the video upload ("注釈.json" -> "json")
+    if Path(safe_name).suffix != ".json":
+        safe_name = _FALLBACK_ANNOTATIONS_NAME
 
     job_id = request.form.get("job_id")
     if not job_id:

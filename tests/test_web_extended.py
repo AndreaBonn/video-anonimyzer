@@ -466,6 +466,22 @@ class TestUploadJson:
 
             shutil.rmtree(job_dir, ignore_errors=True)
 
+    def test_upload_json_non_ascii_name_keeps_json_extension(self, client):
+        # secure_filename turns "注釈.json" into "json": the upload must still
+        # be accepted and saved under a .json name, not rejected as non-JSON.
+        from person_anonymizer.web.app import UPLOAD_DIR
+
+        job_id = "aabbccddeeff"
+        (UPLOAD_DIR / job_id).mkdir(parents=True, exist_ok=True)
+        content = json.dumps({"frames": {}}).encode()
+        data = {"json_file": (io.BytesIO(content), "注釈.json"), "job_id": job_id}
+
+        resp = client.post("/api/upload-json", data=data, content_type="multipart/form-data")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["filename"] == "annotations.json"
+        assert (UPLOAD_DIR / job_id / "annotations.json").read_bytes() == content
+
 
 # ---------------------------------------------------------------------------
 # TestAppStartPipelineExtended — app.py start_pipeline ulteriori scenari

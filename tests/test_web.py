@@ -442,6 +442,26 @@ class TestUploadSecurity:
         assert str(tmp_path) not in resp.get_data(as_text=True)
         assert (web_app.UPLOAD_DIR / body["job_id"] / body["filename"]).read_bytes() == content
 
+    @pytest.mark.parametrize(
+        ("original_name", "expected_name"),
+        [("日本.mp4", "video.mp4"), ("città.mp4", "citta.mp4")],
+    )
+    def test_upload_keeps_the_extension_of_non_ascii_names(
+        self, client, monkeypatch, original_name, expected_name
+    ):
+        # secure_filename drops non-ASCII characters: "日本.mp4" would become
+        # "mp4", a file without extension that the pipeline rejects later.
+        monkeypatch.setattr(web_app, "read_video_info", lambda path: {})
+        content = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
+        data = {"video": (io.BytesIO(content), original_name)}
+
+        resp = client.post("/api/upload", data=data, content_type="multipart/form-data")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["filename"] == expected_name
+        assert (web_app.UPLOAD_DIR / body["job_id"] / expected_name).read_bytes() == content
+
 
 # ---------------------------------------------------------------------------
 # TestAnnotationValidation
