@@ -193,10 +193,11 @@ class TestSaveOutputsNoFfmpeg:
         # Crea il file temporaneo per poterlo copiare
         (tmp_path / "temp.avi").write_bytes(b"\x00" * 8)
 
-        with patch("person_anonymizer.postprocessing.encode_with_audio"), \
-             patch("person_anonymizer.postprocessing.encode_without_audio"), \
-             patch("person_anonymizer.output.shutil.copy") as mock_copy:
-
+        with (
+            patch("person_anonymizer.postprocessing.encode_with_audio"),
+            patch("person_anonymizer.postprocessing.encode_without_audio"),
+            patch("person_anonymizer.output.shutil.copy") as mock_copy,
+        ):
             save_outputs(ctx, result, config, "input.mp4", paths, meta)
 
         mock_copy.assert_called_once_with(paths.temp_video, paths.output)
@@ -248,9 +249,10 @@ class TestSaveOutputsWithFfmpeg:
         ctx = _make_ctx()
         config = PipelineConfig()
 
-        with patch("person_anonymizer.postprocessing.encode_with_audio") as mock_encode, \
-             patch("person_anonymizer.postprocessing.encode_without_audio"):
-
+        with (
+            patch("person_anonymizer.postprocessing.encode_with_audio") as mock_encode,
+            patch("person_anonymizer.postprocessing.encode_without_audio"),
+        ):
             save_outputs(ctx, result, config, "input.mp4", paths, meta)
 
         mock_encode.assert_called_once_with(paths.temp_video, "input.mp4", paths.output)
@@ -266,9 +268,10 @@ class TestSaveOutputsWithFfmpeg:
         # Crea il temp_debug
         (tmp_path / "temp_debug.avi").write_bytes(b"\x00" * 8)
 
-        with patch("person_anonymizer.postprocessing.encode_with_audio"), \
-             patch("person_anonymizer.postprocessing.encode_without_audio") as mock_enc_noaudio:
-
+        with (
+            patch("person_anonymizer.postprocessing.encode_with_audio"),
+            patch("person_anonymizer.postprocessing.encode_without_audio") as mock_enc_noaudio,
+        ):
             save_outputs(ctx, result, config, "input.mp4", paths, meta)
 
         mock_enc_noaudio.assert_called_once_with(paths.temp_debug, paths.debug)
@@ -293,8 +296,7 @@ class TestSaveOutputsReport:
             }
         }
         result = _make_result(
-            ffmpeg_available=False, enable_debug=False, enable_report=True,
-            report_data=report_data
+            ffmpeg_available=False, enable_debug=False, enable_report=True, report_data=report_data
         )
         paths = _make_paths(tmp_path)
         meta = _make_meta()
@@ -344,8 +346,11 @@ class TestSaveOutputsJson:
         # Arrange
         annotations = self._annotation_result()
         result = _make_result(
-            ffmpeg_available=False, enable_debug=False, enable_report=False,
-            mode="manual", annotations=annotations
+            ffmpeg_available=False,
+            enable_debug=False,
+            enable_report=False,
+            mode="manual",
+            annotations=annotations,
         )
         paths = _make_paths(tmp_path)
         meta = _make_meta()
@@ -384,8 +389,11 @@ class TestSaveOutputsJson:
         # Arrange
         annotations = self._annotation_result()
         result = _make_result(
-            ffmpeg_available=False, enable_debug=False, enable_report=False,
-            mode="auto", annotations=annotations
+            ffmpeg_available=False,
+            enable_debug=False,
+            enable_report=False,
+            mode="auto",
+            annotations=annotations,
         )
         paths = _make_paths(tmp_path)
         meta = _make_meta()
@@ -403,8 +411,11 @@ class TestSaveOutputsJson:
         # Arrange
         annotations = self._annotation_result()
         result = _make_result(
-            ffmpeg_available=False, enable_debug=False, enable_report=False,
-            mode="manual", annotations=annotations
+            ffmpeg_available=False,
+            enable_debug=False,
+            enable_report=False,
+            mode="manual",
+            annotations=annotations,
         )
         paths = _make_paths(tmp_path)
         meta = VideoMeta(fps=30.0, frame_w=1920, frame_h=1080, total_frames=100)
@@ -431,8 +442,11 @@ class TestSaveOutputsJson:
             }
         }
         result = _make_result(
-            ffmpeg_available=False, enable_debug=False, enable_report=False,
-            mode="manual", annotations=annotations
+            ffmpeg_available=False,
+            enable_debug=False,
+            enable_report=False,
+            mode="manual",
+            annotations=annotations,
         )
         paths = _make_paths(tmp_path)
         meta = _make_meta()
@@ -483,6 +497,5 @@ class TestSaveOutputsCleanup:
             patch("person_anonymizer.output.os.remove", side_effect=OSError("Permission denied")),
             patch("person_anonymizer.output.os.path.exists", return_value=True),
         ):
-
             # Non deve sollevare
             save_outputs(ctx, result, config, "input.mp4", paths, meta)

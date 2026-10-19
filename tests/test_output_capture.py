@@ -391,7 +391,6 @@ class TestPatchedTqdmBehavior:
         capture = TqdmCapture(sse=mock_sse, job_id="job1")
         capture.install()
 
-
         import tqdm as tqdm_module
 
         bar = tqdm_module.tqdm(total=100, desc="Progress test")

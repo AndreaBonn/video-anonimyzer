@@ -27,8 +27,9 @@ class TestMergeOverlappingRectsLargeInput:
             _merge_overlapping_rects(rects)
 
         # Assert — warning loggato
-        assert any("potenzialmente lenta" in msg or "performance" in msg.lower()
-                   for msg in caplog.messages)
+        assert any(
+            "potenzialmente lenta" in msg or "performance" in msg.lower() for msg in caplog.messages
+        )
 
     def test_more_than_100_rects_returns_correct_count(self):
         # Arrange — 110 rettangoli non sovrapposti

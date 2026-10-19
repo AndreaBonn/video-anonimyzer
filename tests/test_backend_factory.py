@@ -52,15 +52,9 @@ class TestLoadDetectionBackend:
         mock_refiner_cls = MagicMock(return_value=mock_refiner)
 
         with (
-            patch(
-                "person_anonymizer.sam3_backend.check_sam3_available", mock_check
-            ),
-            patch(
-                "person_anonymizer.sam3_backend.Sam3ImageRefiner", mock_refiner_cls
-            ),
-            patch(
-                "person_anonymizer.sam3_backend.Sam3VideoDetector", MagicMock()
-            ),
+            patch("person_anonymizer.sam3_backend.check_sam3_available", mock_check),
+            patch("person_anonymizer.sam3_backend.Sam3ImageRefiner", mock_refiner_cls),
+            patch("person_anonymizer.sam3_backend.Sam3VideoDetector", MagicMock()),
         ):
             backend = load_detection_backend(config)
             assert backend.backend_name == "yolo+sam3"
@@ -77,15 +71,9 @@ class TestLoadDetectionBackend:
         mock_detector_cls = MagicMock(return_value=mock_detector)
 
         with (
-            patch(
-                "person_anonymizer.sam3_backend.check_sam3_available", mock_check
-            ),
-            patch(
-                "person_anonymizer.sam3_backend.Sam3ImageRefiner", MagicMock()
-            ),
-            patch(
-                "person_anonymizer.sam3_backend.Sam3VideoDetector", mock_detector_cls
-            ),
+            patch("person_anonymizer.sam3_backend.check_sam3_available", mock_check),
+            patch("person_anonymizer.sam3_backend.Sam3ImageRefiner", MagicMock()),
+            patch("person_anonymizer.sam3_backend.Sam3VideoDetector", mock_detector_cls),
         ):
             backend = load_detection_backend(config)
             assert backend.backend_name == "sam3"

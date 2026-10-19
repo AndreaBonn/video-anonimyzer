@@ -306,13 +306,13 @@ class TestPipelineRunnerRun:
 
     def test_run_emits_started_event(self, runner, mock_sse, tmp_output):
         # Arrange
-        with patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg, patch(
-            "person_anonymizer.pipeline.run_pipeline"
-        ), patch("person_anonymizer.web.pipeline_runner.TqdmCapture"), patch(
-            "person_anonymizer.web.pipeline_runner.StdoutCapture"
-        ), patch(
-            "person_anonymizer.web.pipeline_runner.Path"
-        ) as mock_path_cls:
+        with (
+            patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg,
+            patch("person_anonymizer.pipeline.run_pipeline"),
+            patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
+            patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
+            patch("person_anonymizer.web.pipeline_runner.Path") as mock_path_cls,
+        ):
             from person_anonymizer.config import PipelineConfig
 
             mock_cfg.return_value = PipelineConfig(operation_mode="auto")
@@ -369,11 +369,14 @@ class TestPipelineRunnerRun:
         # Arrange
         from person_anonymizer.models import PipelineError
 
-        with patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg, patch(
-            "person_anonymizer.pipeline.run_pipeline",
-            side_effect=PipelineError("pipeline failed"),
-        ), patch("person_anonymizer.web.pipeline_runner.TqdmCapture"), patch(
-            "person_anonymizer.web.pipeline_runner.StdoutCapture"
+        with (
+            patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg,
+            patch(
+                "person_anonymizer.pipeline.run_pipeline",
+                side_effect=PipelineError("pipeline failed"),
+            ),
+            patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
+            patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
         ):
             from person_anonymizer.config import PipelineConfig
 
@@ -409,13 +412,13 @@ class TestPipelineRunnerRun:
         # Arrange — stop_event settato, ma con config valida per arrivare al finally
         runner._stop_event.set()
 
-        with patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg, patch(
-            "person_anonymizer.pipeline.run_pipeline"
-        ), patch("person_anonymizer.web.pipeline_runner.TqdmCapture"), patch(
-            "person_anonymizer.web.pipeline_runner.StdoutCapture"
-        ), patch(
-            "person_anonymizer.web.pipeline_runner.Path"
-        ) as mock_path_cls:
+        with (
+            patch("person_anonymizer.web.pipeline_runner._build_config") as mock_cfg,
+            patch("person_anonymizer.pipeline.run_pipeline"),
+            patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
+            patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
+            patch("person_anonymizer.web.pipeline_runner.Path") as mock_path_cls,
+        ):
             from person_anonymizer.config import PipelineConfig
 
             mock_cfg.return_value = PipelineConfig(operation_mode="auto")

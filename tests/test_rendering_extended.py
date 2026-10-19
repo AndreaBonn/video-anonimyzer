@@ -52,9 +52,12 @@ class TestRenderVideoExtended:
 
             # Act
             render_video(
-                input_path, output_path,
+                input_path,
+                output_path,
                 annotations={},
-                fps=25.0, frame_w=20, frame_h=20,
+                fps=25.0,
+                frame_w=20,
+                frame_h=20,
                 method="pixelation",
                 fisheye=FisheyeContext(),
                 config=config,
@@ -82,9 +85,12 @@ class TestRenderVideoExtended:
                 # Act / Assert
                 with pytest.raises(RuntimeError, match="Impossibile aprire VideoWriter"):
                     render_video(
-                        input_path, "/nonexistent/output.avi",
+                        input_path,
+                        "/nonexistent/output.avi",
                         annotations={},
-                        fps=25.0, frame_w=20, frame_h=20,
+                        fps=25.0,
+                        frame_w=20,
+                        frame_h=20,
                         method="pixelation",
                         fisheye=FisheyeContext(),
                         config=config,
@@ -108,9 +114,12 @@ class TestRenderVideoExtended:
             with patch("person_anonymizer.rendering.cv2.VideoWriter", side_effect=writer_calls):
                 with pytest.raises(RuntimeError, match="Impossibile aprire VideoWriter"):
                     render_video(
-                        input_path, output_path,
+                        input_path,
+                        output_path,
                         annotations={},
-                        fps=25.0, frame_w=20, frame_h=20,
+                        fps=25.0,
+                        frame_w=20,
+                        frame_h=20,
                         method="pixelation",
                         fisheye=FisheyeContext(),
                         config=config,
@@ -134,9 +143,12 @@ class TestRenderVideoExtended:
 
             # Act
             render_video(
-                input_path, output_path,
+                input_path,
+                output_path,
                 annotations=annotations,
-                fps=25.0, frame_w=20, frame_h=20,
+                fps=25.0,
+                frame_w=20,
+                frame_h=20,
                 method="blur",
                 fisheye=FisheyeContext(),
                 config=config,
@@ -172,9 +184,12 @@ class TestRenderVideoExtended:
 
             # Act
             render_video(
-                input_path, output_path,
+                input_path,
+                output_path,
                 annotations=annotations,
-                fps=25.0, frame_w=20, frame_h=20,
+                fps=25.0,
+                frame_w=20,
+                frame_h=20,
                 method="blur",
                 fisheye=FisheyeContext(),
                 config=config,
@@ -209,9 +224,12 @@ class TestRenderVideoExtended:
 
             # Act
             render_video(
-                input_path, output_path,
+                input_path,
+                output_path,
                 annotations=annotations,
-                fps=25.0, frame_w=20, frame_h=20,
+                fps=25.0,
+                frame_w=20,
+                frame_h=20,
                 method="pixelation",
                 fisheye=FisheyeContext(),
                 config=config,
@@ -253,9 +271,12 @@ class TestRenderVideoExtended:
 
             # Act
             render_video(
-                input_path, output_path,
+                input_path,
+                output_path,
                 annotations=annotations,
-                fps=25.0, frame_w=20, frame_h=20,
+                fps=25.0,
+                frame_w=20,
+                frame_h=20,
                 method="pixelation",
                 fisheye=FisheyeContext(),
                 config=config,
@@ -285,9 +306,7 @@ class TestComputeReviewStatsExtended:
     def test_frame_only_in_reviewed_counts_as_added(self):
         # Arrange — frame presente solo in reviewed (non in original)
         original = {}
-        reviewed = {
-            0: {"auto": [[(0, 0), (10, 0), (10, 10)]], "manual": []}
-        }
+        reviewed = {0: {"auto": [[(0, 0), (10, 0), (10, 10)]], "manual": []}}
 
         # Act
         stats = compute_review_stats(original, reviewed, total_frames=1)
@@ -299,9 +318,7 @@ class TestComputeReviewStatsExtended:
 
     def test_frame_only_in_original_counts_as_removed(self):
         # Arrange — frame presente solo in original
-        original = {
-            3: {"auto": [[(0, 0), (10, 0), (10, 10)]], "manual": []}
-        }
+        original = {3: {"auto": [[(0, 0), (10, 0), (10, 10)]], "manual": []}}
         reviewed = {}
 
         # Act

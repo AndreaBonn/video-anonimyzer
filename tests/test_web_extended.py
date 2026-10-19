@@ -126,9 +126,7 @@ class TestMiddlewareCsrf:
         resp = client.get("/")
 
         # Assert
-        assert (
-            resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
-        )
+        assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
 
     def test_security_headers_permissions_policy(self, client):
         """Permissions-Policy deve disabilitare camera, mic, geoloc."""

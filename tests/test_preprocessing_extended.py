@@ -49,11 +49,9 @@ class TestBuildUndistortionMaps:
 
     def test_maps_have_correct_shape(self):
         # Arrange
-        camera_matrix = np.array([
-            [400.0, 0.0, 200.0],
-            [0.0, 400.0, 150.0],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float64)
+        camera_matrix = np.array(
+            [[400.0, 0.0, 200.0], [0.0, 400.0, 150.0], [0.0, 0.0, 1.0]], dtype=np.float64
+        )
         dist_coefficients = np.zeros((5, 1), dtype=np.float64)
         frame_w, frame_h = 400, 300
 
@@ -65,11 +63,9 @@ class TestBuildUndistortionMaps:
 
     def test_maps_with_distortion_differ_from_identity(self):
         # Arrange — distorsione radiale significativa
-        camera_matrix = np.array([
-            [500.0, 0.0, 320.0],
-            [0.0, 500.0, 240.0],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float64)
+        camera_matrix = np.array(
+            [[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]], dtype=np.float64
+        )
         dist_no_distortion = np.zeros((5, 1), dtype=np.float64)
         dist_with_distortion = np.array([-0.3, 0.1, 0, 0, 0], dtype=np.float64).reshape(5, 1)
         frame_w, frame_h = 640, 480
@@ -97,11 +93,9 @@ class TestUndistortFrame:
 
     def test_returns_array_same_shape(self):
         # Arrange
-        camera_matrix = np.array([
-            [400.0, 0.0, 160.0],
-            [0.0, 400.0, 120.0],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float64)
+        camera_matrix = np.array(
+            [[400.0, 0.0, 160.0], [0.0, 400.0, 120.0], [0.0, 0.0, 1.0]], dtype=np.float64
+        )
         dist_coefficients = np.zeros((5, 1), dtype=np.float64)
         frame_w, frame_h = 320, 240
         map1, map2 = build_undistortion_maps(camera_matrix, dist_coefficients, frame_w, frame_h)
@@ -116,11 +110,9 @@ class TestUndistortFrame:
 
     def test_identity_maps_return_identical_frame(self):
         # Arrange — mappe identity (nessuna distorsione)
-        camera_matrix = np.array([
-            [500.0, 0.0, 100.0],
-            [0.0, 500.0, 100.0],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float64)
+        camera_matrix = np.array(
+            [[500.0, 0.0, 100.0], [0.0, 500.0, 100.0], [0.0, 0.0, 1.0]], dtype=np.float64
+        )
         dist_coefficients = np.zeros((5, 1), dtype=np.float64)
         frame_w, frame_h = 200, 200
         map1, map2 = build_undistortion_maps(camera_matrix, dist_coefficients, frame_w, frame_h)

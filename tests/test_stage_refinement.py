@@ -27,10 +27,7 @@ def _make_config(**kwargs):
 
 
 def _make_annotations(n_frames=5):
-    return {
-        i: {"auto": [], "manual": [], "intensities": []}
-        for i in range(n_frames)
-    }
+    return {i: {"auto": [], "manual": [], "intensities": []} for i in range(n_frames)}
 
 
 class TestRunRefinementLoopDisabled:
@@ -43,6 +40,7 @@ class TestRunRefinementLoopDisabled:
 
         # Act
         from person_anonymizer.stage_refinement import run_refinement_loop
+
         result_ann, passes, added, _outcome = run_refinement_loop(
             input_path="input.mp4",
             annotations=annotations,
@@ -69,6 +67,7 @@ class TestRunRefinementLoopDisabled:
 
         with patch("person_anonymizer.stage_refinement.render_video") as mock_render:
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -94,11 +93,12 @@ class TestRunRefinementLoopNoAlerts:
         config = _make_config(max_refinement_passes=3)
         annotations = _make_annotations()
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch("person_anonymizer.stage_refinement.run_post_render_check", return_value=[]),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -121,11 +121,12 @@ class TestRunRefinementLoopNoAlerts:
         config = _make_config(max_refinement_passes=3)
         annotations = _make_annotations()
 
-        with patch("person_anonymizer.stage_refinement.render_video") as mock_render, \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video") as mock_render,
+            patch("person_anonymizer.stage_refinement.run_post_render_check", return_value=[]),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -153,15 +154,23 @@ class TestRunRefinementLoopWithAlerts:
         # Frame 1 ha un residuo genuino
         genuine_alerts = [(1, [[50, 50, 150, 200]])]
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   side_effect=[genuine_alerts, []]), \
-             patch("person_anonymizer.stage_refinement.filter_artifact_detections",
-                   return_value=(genuine_alerts, 0, 1)), \
-             patch("person_anonymizer.stage_refinement.box_to_polygon",
-                   return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch(
+                "person_anonymizer.stage_refinement.run_post_render_check",
+                side_effect=[genuine_alerts, []],
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.filter_artifact_detections",
+                return_value=(genuine_alerts, 0, 1),
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.box_to_polygon",
+                return_value=[(50, 50), (150, 50), (150, 200), (50, 200)],
+            ),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             result_ann, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -188,6 +197,7 @@ class TestRunRefinementLoopWithAlerts:
         genuine_pass2 = [(2, [[60, 60, 160, 210]])]
 
         call_count = [0]
+
         def fake_post_check(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -200,15 +210,23 @@ class TestRunRefinementLoopWithAlerts:
             frame_alerts = args[0]
             return frame_alerts, 0, len(frame_alerts)
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   side_effect=fake_post_check), \
-             patch("person_anonymizer.stage_refinement.filter_artifact_detections",
-                   side_effect=fake_filter), \
-             patch("person_anonymizer.stage_refinement.box_to_polygon",
-                   return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch(
+                "person_anonymizer.stage_refinement.run_post_render_check",
+                side_effect=fake_post_check,
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.filter_artifact_detections",
+                side_effect=fake_filter,
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.box_to_polygon",
+                return_value=[(50, 50), (150, 50), (150, 200), (50, 200)],
+            ),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -231,13 +249,18 @@ class TestRunRefinementLoopWithAlerts:
         annotations = _make_annotations()
         fake_alerts = [(1, [[50, 50, 150, 200]])]
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   return_value=fake_alerts), \
-             patch("person_anonymizer.stage_refinement.filter_artifact_detections",
-                   return_value=([], 1, 0)):  # tutti artefatti, 0 genuini
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch(
+                "person_anonymizer.stage_refinement.run_post_render_check", return_value=fake_alerts
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.filter_artifact_detections",
+                return_value=([], 1, 0),
+            ),
+        ):  # tutti artefatti, 0 genuini
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -261,15 +284,23 @@ class TestRunRefinementLoopWithAlerts:
         annotations = _make_annotations(n_frames=3)
         genuine_alerts = [(1, [[50, 50, 150, 200]])]
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   return_value=genuine_alerts), \
-             patch("person_anonymizer.stage_refinement.filter_artifact_detections",
-                   return_value=(genuine_alerts, 0, 1)), \
-             patch("person_anonymizer.stage_refinement.box_to_polygon",
-                   return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch(
+                "person_anonymizer.stage_refinement.run_post_render_check",
+                return_value=genuine_alerts,
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.filter_artifact_detections",
+                return_value=(genuine_alerts, 0, 1),
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.box_to_polygon",
+                return_value=[(50, 50), (150, 50), (150, 200), (50, 200)],
+            ),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             _, passes, _, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -293,15 +324,23 @@ class TestRunRefinementLoopWithAlerts:
         annotations = _make_annotations(n_frames=3)
         genuine_alerts = [(99, [[10, 10, 100, 200]])]
 
-        with patch("person_anonymizer.stage_refinement.render_video"), \
-             patch("person_anonymizer.stage_refinement.run_post_render_check",
-                   side_effect=[genuine_alerts, []]), \
-             patch("person_anonymizer.stage_refinement.filter_artifact_detections",
-                   return_value=(genuine_alerts, 0, 1)), \
-             patch("person_anonymizer.stage_refinement.box_to_polygon",
-                   return_value=[(10, 10), (100, 10), (100, 200), (10, 200)]):
-
+        with (
+            patch("person_anonymizer.stage_refinement.render_video"),
+            patch(
+                "person_anonymizer.stage_refinement.run_post_render_check",
+                side_effect=[genuine_alerts, []],
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.filter_artifact_detections",
+                return_value=(genuine_alerts, 0, 1),
+            ),
+            patch(
+                "person_anonymizer.stage_refinement.box_to_polygon",
+                return_value=[(10, 10), (100, 10), (100, 200), (10, 200)],
+            ),
+        ):
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             result_ann, _, _, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
@@ -332,6 +371,7 @@ class TestRunRefinementLoopStopEvent:
 
         with patch("person_anonymizer.stage_refinement.render_video") as mock_render:
             from person_anonymizer.stage_refinement import run_refinement_loop
+
             _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,

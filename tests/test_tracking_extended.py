@@ -28,12 +28,15 @@ class TestCreateTracker:
         mock_byte_tracker_cls = MagicMock(return_value=mock_tracker_instance)
         mock_namespace_cls = MagicMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
 
-        with patch.dict("sys.modules", {
-            "ultralytics": MagicMock(),
-            "ultralytics.trackers": MagicMock(),
-            "ultralytics.trackers.byte_tracker": MagicMock(BYTETracker=mock_byte_tracker_cls),
-            "ultralytics.utils": MagicMock(IterableSimpleNamespace=mock_namespace_cls),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "ultralytics": MagicMock(),
+                "ultralytics.trackers": MagicMock(),
+                "ultralytics.trackers.byte_tracker": MagicMock(BYTETracker=mock_byte_tracker_cls),
+                "ultralytics.utils": MagicMock(IterableSimpleNamespace=mock_namespace_cls),
+            },
+        ):
             config = PipelineConfig(track_max_age=30, track_match_thresh=0.8)
             tracker = create_tracker(fps=25.0, config=config)
 
@@ -51,12 +54,15 @@ class TestCreateTracker:
 
         mock_byte_tracker_cls = MagicMock(return_value=MagicMock())
 
-        with patch.dict("sys.modules", {
-            "ultralytics": MagicMock(),
-            "ultralytics.trackers": MagicMock(),
-            "ultralytics.trackers.byte_tracker": MagicMock(BYTETracker=mock_byte_tracker_cls),
-            "ultralytics.utils": MagicMock(IterableSimpleNamespace=capture_namespace),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "ultralytics": MagicMock(),
+                "ultralytics.trackers": MagicMock(),
+                "ultralytics.trackers.byte_tracker": MagicMock(BYTETracker=mock_byte_tracker_cls),
+                "ultralytics.utils": MagicMock(IterableSimpleNamespace=capture_namespace),
+            },
+        ):
             config = PipelineConfig(track_max_age=30, track_match_thresh=0.8)
             create_tracker(fps=5.0, config=config)
 

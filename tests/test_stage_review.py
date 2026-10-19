@@ -49,10 +49,12 @@ class TestRunManualReviewStageCLI:
         fe = FisheyeContext()
         review_stats = {"added": 1, "removed": 0, "frames_modified": 1, "frames_reviewed": 3}
 
-        with patch("person_anonymizer.manual_reviewer.run_manual_review",
-                   return_value=(annotations, review_stats)) as mock_review:
-
+        with patch(
+            "person_anonymizer.manual_reviewer.run_manual_review",
+            return_value=(annotations, review_stats),
+        ) as mock_review:
             from person_anonymizer.stage_review import run_manual_review_stage
+
             result_ann, result_stats = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -72,16 +74,19 @@ class TestRunManualReviewStageCLI:
         ctx = _make_ctx(review_state=None)
         input_annotations = _make_annotations()
         updated_annotations = {
-            **input_annotations, 99: {"auto": [], "manual": [], "intensities": []}
+            **input_annotations,
+            99: {"auto": [], "manual": [], "intensities": []},
         }
         config = PipelineConfig()
         fe = FisheyeContext()
         review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 3}
 
-        with patch("person_anonymizer.manual_reviewer.run_manual_review",
-                   return_value=(updated_annotations, review_stats)):
-
+        with patch(
+            "person_anonymizer.manual_reviewer.run_manual_review",
+            return_value=(updated_annotations, review_stats),
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             result_ann, _ = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -104,10 +109,12 @@ class TestRunManualReviewStageCLI:
         fisheye = FisheyeContext()
         expected_stats = {"added": 5, "removed": 2, "frames_modified": 3, "frames_reviewed": 3}
 
-        with patch("person_anonymizer.manual_reviewer.run_manual_review",
-                   return_value=(annotations, expected_stats)):
-
+        with patch(
+            "person_anonymizer.manual_reviewer.run_manual_review",
+            return_value=(annotations, expected_stats),
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             _, result_stats = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -130,10 +137,12 @@ class TestRunManualReviewStageCLI:
         fisheye = FisheyeContext()
         review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
 
-        with patch("person_anonymizer.manual_reviewer.run_manual_review",
-                   return_value=(annotations, review_stats)):
-
+        with patch(
+            "person_anonymizer.manual_reviewer.run_manual_review",
+            return_value=(annotations, review_stats),
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             result_ann, result_stats = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -177,6 +186,7 @@ class TestRunManualReviewStageWeb:
             return_value={"frames_modified": 0, "added": 0, "removed": 0},
         ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -205,6 +215,7 @@ class TestRunManualReviewStageWeb:
             return_value={"frames_modified": 0, "added": 0, "removed": 0},
         ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -235,6 +246,7 @@ class TestRunManualReviewStageWeb:
             return_value={"frames_modified": 0, "added": 0, "removed": 0},
         ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             result_ann, _ = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -258,9 +270,11 @@ class TestRunManualReviewStageWeb:
         fisheye = FisheyeContext()
         expected_stats = {"added": 2, "removed": 1, "frames_modified": 2, "frames_reviewed": 3}
 
-        with patch("person_anonymizer.stage_review.compute_review_stats",
-                   return_value=expected_stats) as mock_stats:
+        with patch(
+            "person_anonymizer.stage_review.compute_review_stats", return_value=expected_stats
+        ) as mock_stats:
             from person_anonymizer.stage_review import run_manual_review_stage
+
             _, result_stats = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -283,10 +297,12 @@ class TestRunManualReviewStageWeb:
         config = PipelineConfig()
         fisheye = FisheyeContext()
 
-        with patch("person_anonymizer.stage_review.compute_review_stats",
-                   return_value={"added": 0, "removed": 0, "frames_modified": 0,
-                                 "frames_reviewed": 0}):
+        with patch(
+            "person_anonymizer.stage_review.compute_review_stats",
+            return_value={"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0},
+        ):
             from person_anonymizer.stage_review import run_manual_review_stage
+
             _, result_stats = run_manual_review_stage(
                 ctx=ctx,
                 input_path="test.mp4",
@@ -320,15 +336,24 @@ def test_web_review_stop_before_setup_does_not_block():
     stop = threading.Event()
     stop.set()
     state.cancel()  # what PipelineRunner.stop() did; setup() will clear it
-    ctx = _make_ctx(review_state=state, sse_manager=MagicMock(), job_id="aabbccddeeff",
-                    stop_event=stop)
+    ctx = _make_ctx(
+        review_state=state, sse_manager=MagicMock(), job_id="aabbccddeeff", stop_event=stop
+    )
     annotations = _make_annotations()
 
     t = threading.Thread(
         target=run_manual_review_stage,
-        kwargs=dict(ctx=ctx, input_path="missing.mp4", annotations=annotations,
-                    config=PipelineConfig(), total_frames=3, fps=25.0, frame_w=640,
-                    frame_h=480, fisheye=FisheyeContext()),
+        kwargs=dict(
+            ctx=ctx,
+            input_path="missing.mp4",
+            annotations=annotations,
+            config=PipelineConfig(),
+            total_frames=3,
+            fps=25.0,
+            frame_w=640,
+            frame_h=480,
+            fisheye=FisheyeContext(),
+        ),
         daemon=True,
     )
     t.start()
@@ -344,13 +369,25 @@ def test_web_review_without_stop_still_waits_for_user():
     from person_anonymizer.web.review_state import ReviewState
 
     state = ReviewState()
-    ctx = _make_ctx(review_state=state, sse_manager=MagicMock(), job_id="aabbccddeeff",
-                    stop_event=threading.Event())
+    ctx = _make_ctx(
+        review_state=state,
+        sse_manager=MagicMock(),
+        job_id="aabbccddeeff",
+        stop_event=threading.Event(),
+    )
     t = threading.Thread(
         target=run_manual_review_stage,
-        kwargs=dict(ctx=ctx, input_path="missing.mp4", annotations=_make_annotations(),
-                    config=PipelineConfig(), total_frames=3, fps=25.0, frame_w=640,
-                    frame_h=480, fisheye=FisheyeContext()),
+        kwargs=dict(
+            ctx=ctx,
+            input_path="missing.mp4",
+            annotations=_make_annotations(),
+            config=PipelineConfig(),
+            total_frames=3,
+            fps=25.0,
+            frame_w=640,
+            frame_h=480,
+            fisheye=FisheyeContext(),
+        ),
         daemon=True,
     )
     t.start()

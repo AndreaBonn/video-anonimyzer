@@ -35,10 +35,10 @@ def mock_cap():
     cap = MagicMock()
     cap.isOpened.return_value = True
     cap.get.side_effect = lambda prop: {
-        0: 100,   # CAP_PROP_POS_FRAMES placeholder
-        7: 30,    # CAP_PROP_FRAME_COUNT
-        3: 640,   # CAP_PROP_FRAME_WIDTH
-        4: 480,   # CAP_PROP_FRAME_HEIGHT
+        0: 100,  # CAP_PROP_POS_FRAMES placeholder
+        7: 30,  # CAP_PROP_FRAME_COUNT
+        3: 640,  # CAP_PROP_FRAME_WIDTH
+        4: 480,  # CAP_PROP_FRAME_HEIGHT
     }.get(prop, 0)
     ret_frame = np.zeros((480, 640, 3), dtype=np.uint8)
     cap.read.return_value = (True, ret_frame)
@@ -407,8 +407,7 @@ class TestRenderDisplay:
 
     def test_render_with_polygon_points_draws_lines(self, reviewer):
         reviewer.current_polygon_points = [(10, 10), (50, 10)]
-        with patch("cv2.line") as mock_line, \
-             patch("cv2.circle") as mock_circle:
+        with patch("cv2.line") as mock_line, patch("cv2.circle") as mock_circle:
             reviewer._render_display()
         # 2 punti → 1 linea tra loro + cerchi per ogni punto
         assert mock_line.call_count >= 1

@@ -54,8 +54,7 @@ def parse_args():
         "--normalize",
         action="store_true",
         help=(
-            "Normalizza i poligoni in rettangoli e unifica "
-            "le aree sovrapposte. Richiede --review."
+            "Normalizza i poligoni in rettangoli e unifica le aree sovrapposte. Richiede --review."
         ),
     )
     parser.add_argument(

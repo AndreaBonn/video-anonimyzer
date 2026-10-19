@@ -93,15 +93,15 @@ class TestBoxToPolygonEdgeCases:
         x1, y1, x2, y2 = 10, 10, 50, 50
         result = box_to_polygon(x1, y1, x2, y2, padding=5, frame_w=0, frame_h=100)
         # x2 clamped a 0, x1 padded a 5
-        assert result[0][0] == 5   # x1 padded
-        assert result[1][0] == 0   # x2 clamped
+        assert result[0][0] == 5  # x1 padded
+        assert result[1][0] == 0  # x2 clamped
 
     def test_frame_h_zero_clamps_y2(self):
         # frame_h=0 falsy → pad uniforme, poi y2 = min(55, 0) = 0
         x1, y1, x2, y2 = 10, 10, 50, 50
         result = box_to_polygon(x1, y1, x2, y2, padding=5, frame_w=100, frame_h=0)
-        assert result[0][1] == 5   # y1 padded
-        assert result[2][1] == 0   # y2 clamped
+        assert result[0][1] == 5  # y1 padded
+        assert result[2][1] == 0  # y2 clamped
 
     def test_both_frame_dimensions_none_uniform_padding(self):
         # Arrange — frame_w=None, frame_h=None → padding uniforme

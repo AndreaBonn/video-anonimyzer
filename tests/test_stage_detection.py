@@ -50,6 +50,7 @@ def _make_frame(h=480, w=640):
 def _make_cap(frames=None, w=640, h=480, fps=25.0):
     """Crea un mock VideoCapture con lista frame."""
     import cv2
+
     cap = MagicMock()
     cap.get.side_effect = lambda prop: {
         cv2.CAP_PROP_FRAME_WIDTH: w,
@@ -73,12 +74,15 @@ class TestInitFrameProcessors:
         # Arrange
         config = _make_config()
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker") as mock_tracker:
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker") as mock_tracker,
+        ):
             mock_clahe.return_value = MagicMock()
             mock_tracker.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             # Act
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
@@ -90,13 +94,16 @@ class TestInitFrameProcessors:
         # Arrange
         config = _make_config(enable_motion_detection=True)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.MotionDetector") as mock_md, \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.MotionDetector") as mock_md,
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
             mock_md.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         mock_md.assert_called_once()
@@ -106,11 +113,14 @@ class TestInitFrameProcessors:
         # Arrange
         config = _make_config(enable_motion_detection=False)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         assert proc.motion_detector is None
@@ -120,13 +130,17 @@ class TestInitFrameProcessors:
         config = _make_config(enable_sliding_window=True)
         fake_patches = [(0, 0, 320, 240), (320, 0, 640, 240)]
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.get_window_patches",
-                   return_value=fake_patches), \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch(
+                "person_anonymizer.stage_detection.get_window_patches", return_value=fake_patches
+            ),
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         assert proc.patches == fake_patches
@@ -135,11 +149,14 @@ class TestInitFrameProcessors:
         # Arrange
         config = _make_config(enable_sliding_window=False)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         assert proc.patches == []
@@ -152,6 +169,7 @@ class TestInitFrameProcessors:
             mock_clahe.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         assert proc.tracker is None
@@ -160,13 +178,16 @@ class TestInitFrameProcessors:
         # Arrange
         config = _make_config(enable_temporal_smoothing=True)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.TemporalSmoother") as mock_sm, \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.TemporalSmoother") as mock_sm,
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
             mock_sm.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         mock_sm.assert_called_once()
@@ -179,11 +200,14 @@ class TestInitFrameProcessors:
             interpolation_fps_threshold=30,
         )
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker"):
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker"),
+        ):
             mock_clahe.return_value = MagicMock()
 
             from person_anonymizer.stage_detection import _init_frame_processors
+
             proc = _init_frame_processors(fps=25.0, frame_w=640, frame_h=480, config=config)
 
         assert proc.do_interpolation is False
@@ -211,13 +235,13 @@ class TestProcessSingleFrame:
         frame = _make_frame()
         proc = self._make_proc(config)
 
-        with patch("person_anonymizer.stage_detection.enhance_frame",
-                   return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         # Assert — risultato con 0 poligoni (nessuna detection)
@@ -231,12 +255,13 @@ class TestProcessSingleFrame:
         frame = _make_frame()
         proc = self._make_proc(config)
 
-        with patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         assert result.polygons == []
@@ -249,14 +274,20 @@ class TestProcessSingleFrame:
         proc = self._make_proc(config)
         fake_box = [100, 100, 200, 300, 0.9]  # x1,y1,x2,y2,conf
 
-        with patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([fake_box], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[fake_box]), \
-             patch("person_anonymizer.stage_detection.box_to_polygon",
-                   return_value=[(100, 100), (200, 100), (200, 300), (100, 300)]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch(
+                "person_anonymizer.stage_detection.run_full_detection",
+                return_value=([fake_box], 0, 0),
+            ),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[fake_box]),
+            patch(
+                "person_anonymizer.stage_detection.box_to_polygon",
+                return_value=[(100, 100), (200, 100), (200, 300), (100, 300)],
+            ),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         assert len(result.polygons) == 1
@@ -270,12 +301,16 @@ class TestProcessSingleFrame:
         proc.sam3_refiner.refine_boxes.return_value = [[(10, 10), (20, 10), (20, 20), (10, 20)]]
         fake_box = [100, 100, 200, 300, 0.9]
 
-        with patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([fake_box], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[fake_box]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch(
+                "person_anonymizer.stage_detection.run_full_detection",
+                return_value=([fake_box], 0, 0),
+            ),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[fake_box]),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         proc.sam3_refiner.refine_boxes.assert_called_once()
@@ -291,14 +326,17 @@ class TestProcessSingleFrame:
         smoother.get_ghost_boxes.return_value = []
         proc.smoother = smoother
 
-        with patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]), \
-             patch("person_anonymizer.stage_detection.box_to_polygon",
-                   return_value=[(0, 0), (10, 0), (10, 10), (0, 10)]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+            patch(
+                "person_anonymizer.stage_detection.box_to_polygon",
+                return_value=[(0, 0), (10, 0), (10, 10), (0, 10)],
+            ),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         smoother.clear_stale.assert_called_once()
@@ -313,14 +351,17 @@ class TestProcessSingleFrame:
         smoother.get_ghost_boxes.return_value = [(99, 10, 10, 200, 300)]  # gtid, gx1, gy1, gx2, gy2
         proc.smoother = smoother
 
-        with patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]), \
-             patch("person_anonymizer.stage_detection.box_to_polygon",
-                   return_value=[(0, 0), (10, 0), (10, 10), (0, 10)]):
-
+        with (
+            patch("person_anonymizer.stage_detection.enhance_frame", return_value=frame),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+            patch(
+                "person_anonymizer.stage_detection.box_to_polygon",
+                return_value=[(0, 0), (10, 0), (10, 10), (0, 10)],
+            ),
+        ):
             from person_anonymizer.stage_detection import _process_single_frame
+
             result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
 
         # 1 ghost box → 1 polygon
@@ -337,15 +378,16 @@ class TestRunDetectionLoop:
         fisheye = FisheyeContext(enabled=False)
         total_frames = len(frames)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()), \
-             patch("person_anonymizer.stage_detection.tqdm") as mock_tqdm, \
-             patch("person_anonymizer.stage_detection.enhance_frame",
-                   side_effect=lambda f, *a, **kw: f), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()),
+            patch("person_anonymizer.stage_detection.tqdm") as mock_tqdm,
+            patch(
+                "person_anonymizer.stage_detection.enhance_frame", side_effect=lambda f, *a, **kw: f
+            ),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+        ):
             mock_clahe.return_value = MagicMock()
             mock_tqdm.return_value.__enter__ = MagicMock()
             mock_tqdm.return_value.__exit__ = MagicMock()
@@ -356,9 +398,15 @@ class TestRunDetectionLoop:
             mock_tqdm.return_value = mock_tqdm_obj
 
             from person_anonymizer.stage_detection import run_detection_loop
+
             return run_detection_loop(
-                cap, total_frames, MagicMock(), config, fisheye,
-                stop_event=stop_event, sam3_refiner=sam3_refiner
+                cap,
+                total_frames,
+                MagicMock(),
+                config,
+                fisheye,
+                stop_event=stop_event,
+                sam3_refiner=sam3_refiner,
             )
 
     def test_returns_annotations_report_stats(self):
@@ -438,6 +486,7 @@ class TestRunDetectionLoop:
         config = _make_config(enable_tracking=False)
         cap = MagicMock()
         import cv2
+
         cap.get.side_effect = lambda prop: {
             cv2.CAP_PROP_FRAME_WIDTH: 640,
             cv2.CAP_PROP_FRAME_HEIGHT: 480,
@@ -448,22 +497,23 @@ class TestRunDetectionLoop:
         # 3 frame totali: buono, corrotto, buono (ultimo triggera break)
         cap.read.side_effect = [
             (True, good_frame),
-            (False, None),   # corrotto ma non ultimo
+            (False, None),  # corrotto ma non ultimo
             (True, good_frame),
-            (False, None),   # fine stream
+            (False, None),  # fine stream
         ]
         cap.release = MagicMock()
         fisheye = FisheyeContext(enabled=False)
 
-        with patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe, \
-             patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()), \
-             patch("person_anonymizer.stage_detection.tqdm") as mock_tqdm, \
-             patch("person_anonymizer.stage_detection.enhance_frame",
-                   side_effect=lambda f, *a, **kw: f), \
-             patch("person_anonymizer.stage_detection.run_full_detection",
-                   return_value=([], 0, 0)), \
-             patch("person_anonymizer.stage_detection.apply_nms", return_value=[]):
-
+        with (
+            patch("person_anonymizer.stage_detection.cv2.createCLAHE") as mock_clahe,
+            patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()),
+            patch("person_anonymizer.stage_detection.tqdm") as mock_tqdm,
+            patch(
+                "person_anonymizer.stage_detection.enhance_frame", side_effect=lambda f, *a, **kw: f
+            ),
+            patch("person_anonymizer.stage_detection.run_full_detection", return_value=([], 0, 0)),
+            patch("person_anonymizer.stage_detection.apply_nms", return_value=[]),
+        ):
             mock_clahe.return_value = MagicMock()
             mock_tqdm_obj = MagicMock()
             mock_tqdm_obj.update = MagicMock()
@@ -471,9 +521,8 @@ class TestRunDetectionLoop:
             mock_tqdm.return_value = mock_tqdm_obj
 
             from person_anonymizer.stage_detection import run_detection_loop
-            annotations, _, _ = run_detection_loop(
-                cap, 3, MagicMock(), config, fisheye
-            )
+
+            annotations, _, _ = run_detection_loop(cap, 3, MagicMock(), config, fisheye)
 
         # Frame 0 e 2 processati, frame 1 saltato
         assert 0 in annotations

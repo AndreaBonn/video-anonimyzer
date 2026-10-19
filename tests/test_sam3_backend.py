@@ -96,9 +96,7 @@ class TestSam3ImageRefiner:
         assert refiner.device == "cuda"
         assert refiner._predictor is None
 
-    @pytest.mark.skipif(
-        check_sam3_available(), reason="SAM3 è installato, test non applicabile"
-    )
+    @pytest.mark.skipif(check_sam3_available(), reason="SAM3 è installato, test non applicabile")
     def test_refine_boxes_raises_without_sam3(self):
         refiner = Sam3ImageRefiner()
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -119,9 +117,7 @@ class TestSam3VideoDetector:
         assert detector.text_prompt == "person"
         assert detector.device == "cuda"
 
-    @pytest.mark.skipif(
-        check_sam3_available(), reason="SAM3 è installato, test non applicabile"
-    )
+    @pytest.mark.skipif(check_sam3_available(), reason="SAM3 è installato, test non applicabile")
     def test_detect_video_raises_without_sam3(self):
         detector = Sam3VideoDetector()
         config = MagicMock()

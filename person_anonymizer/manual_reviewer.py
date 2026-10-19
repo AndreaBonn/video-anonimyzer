@@ -244,8 +244,7 @@ class ManualReviewer:
         cv2.rectangle(frame, (0, y_start), (self.display_w, self.display_h), (40, 40, 40), -1)
         help_line1 = "  <-/-> Naviga  |  Spazio Avanti  |  Invio Chiudi poligono  |  Q Esci"
         help_line2 = (
-            "  Click Aggiungi punto  |  Ctrl+Z Annulla punto  |  "
-            "D Elimina  |  Esc Annulla poligono"
+            "  Click Aggiungi punto  |  Ctrl+Z Annulla punto  |  D Elimina  |  Esc Annulla poligono"
         )
         cv2.putText(
             frame, help_line1, (5, y_start + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1

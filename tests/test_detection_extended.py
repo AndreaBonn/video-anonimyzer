@@ -114,7 +114,7 @@ class TestRunSlidingWindow:
         model = _make_fake_model(boxes_xyxy=[(5, 5, 20, 20)], conf=[0.9])
         frame = np.zeros((200, 200, 3), dtype=np.uint8)
         patches = [
-            (0, 0, 50, 50),      # interseca motion region (25,25)-(75,75)
+            (0, 0, 50, 50),  # interseca motion region (25,25)-(75,75)
             (100, 100, 200, 200),  # non interseca
         ]
         motion_regions = [(25, 25, 75, 75)]
@@ -250,12 +250,13 @@ class TestRunMultiscaleInference:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
         # Act
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, hits = run_multiscale_inference(
-                model, frame, scales=[1.0], augmentations=[], conf=0.5,
-                orig_w=100, orig_h=100
+                model, frame, scales=[1.0], augmentations=[], conf=0.5, orig_w=100, orig_h=100
             )
 
         # Assert — 1 box, 1 hit
@@ -269,13 +270,20 @@ class TestRunMultiscaleInference:
         model = _make_fake_model(boxes_xyxy=[(10, 10, 50, 50)], conf=[0.9])
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.flip", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.flip", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, hits = run_multiscale_inference(
-                model, frame, scales=[1.0], augmentations=["flip_h"], conf=0.5,
-                orig_w=100, orig_h=100
+                model,
+                frame,
+                scales=[1.0],
+                augmentations=["flip_h"],
+                conf=0.5,
+                orig_w=100,
+                orig_h=100,
             )
 
         # Assert — 2 hit (scala + flip), 2 box
@@ -291,12 +299,19 @@ class TestRunMultiscaleInference:
         model = _make_fake_model(boxes_xyxy=[(5, 5, 30, 30)], conf=[0.7])
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_CUBIC", 2),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, hits = run_multiscale_inference(
-                model, frame, scales=[0.5, 1.0, 2.0], augmentations=[], conf=0.5,
-                orig_w=100, orig_h=100
+                model,
+                frame,
+                scales=[0.5, 1.0, 2.0],
+                augmentations=[],
+                conf=0.5,
+                orig_w=100,
+                orig_h=100,
             )
 
         # Assert — 3 scale × 1 box = 3 box, 3 hits
@@ -308,11 +323,12 @@ class TestRunMultiscaleInference:
         model = _make_fake_model()
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, hits = run_multiscale_inference(
-                model, frame, scales=[1.0], augmentations=[], conf=0.5,
-                orig_w=100, orig_h=100
+                model, frame, scales=[1.0], augmentations=[], conf=0.5, orig_w=100, orig_h=100
             )
 
         # Assert
@@ -344,11 +360,16 @@ class TestRunFullDetection:
         config = self._make_config(sliding_window=False)
         patches = [(0, 0, 50, 50)]
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, sw_hits, ms_hits = run_full_detection(
-                model, frame, conf=0.5,
-                frame_w=100, frame_h=100,
+                model,
+                frame,
+                conf=0.5,
+                frame_w=100,
+                frame_h=100,
                 motion_regions=None,
                 patches=patches,
                 config=config,
@@ -363,11 +384,16 @@ class TestRunFullDetection:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         config = self._make_config(sliding_window=True)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             all_boxes, sw_hits, ms_hits = run_full_detection(
-                model, frame, conf=0.5,
-                frame_w=100, frame_h=100,
+                model,
+                frame,
+                conf=0.5,
+                frame_w=100,
+                frame_h=100,
                 motion_regions=None,
                 patches=[],
                 config=config,
@@ -382,11 +408,16 @@ class TestRunFullDetection:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         config = self._make_config(sliding_window=False)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1):
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+        ):
             result = run_full_detection(
-                model, frame, conf=0.5,
-                frame_w=100, frame_h=100,
+                model,
+                frame,
+                conf=0.5,
+                frame_w=100,
+                frame_h=100,
                 motion_regions=None,
                 patches=[],
                 config=config,
@@ -401,13 +432,18 @@ class TestRunFullDetection:
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         config = self._make_config(sliding_window=False)
 
-        with patch("person_anonymizer.detection.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1), \
-             patch("person_anonymizer.detection.cv2.dnn") as mock_dnn:
+        with (
+            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
+            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
+            patch("person_anonymizer.detection.cv2.dnn") as mock_dnn,
+        ):
             mock_dnn.NMSBoxes.return_value = np.array([[0]])
             all_boxes, sw_hits, ms_hits = run_full_detection(
-                model, frame, conf=0.5,
-                frame_w=100, frame_h=100,
+                model,
+                frame,
+                conf=0.5,
+                frame_w=100,
+                frame_h=100,
                 motion_regions=None,
                 patches=[],
                 config=config,

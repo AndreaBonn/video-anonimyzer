@@ -81,9 +81,10 @@ class TestEncodeWithAudio:
         # Arrange — entrambe le chiamate ffmpeg falliscono → shutil.copy
         import ffmpeg as ffmpeg_module
 
-        with patch("person_anonymizer.postprocessing.ffmpeg") as mock_ffmpeg, \
-             patch("person_anonymizer.postprocessing.shutil.copy") as mock_copy:
-
+        with (
+            patch("person_anonymizer.postprocessing.ffmpeg") as mock_ffmpeg,
+            patch("person_anonymizer.postprocessing.shutil.copy") as mock_copy,
+        ):
             mock_fail = MagicMock()
             mock_fail.overwrite_output.return_value.run.side_effect = ffmpeg_module.Error(
                 "ffmpeg", b"", b"error"
@@ -128,9 +129,10 @@ class TestEncodeWithoutAudio:
         # Arrange
         import ffmpeg as ffmpeg_module
 
-        with patch("person_anonymizer.postprocessing.ffmpeg") as mock_ffmpeg, \
-             patch("person_anonymizer.postprocessing.shutil.copy") as mock_copy:
-
+        with (
+            patch("person_anonymizer.postprocessing.ffmpeg") as mock_ffmpeg,
+            patch("person_anonymizer.postprocessing.shutil.copy") as mock_copy,
+        ):
             mock_fail = MagicMock()
             mock_fail.overwrite_output.return_value.run.side_effect = ffmpeg_module.Error(
                 "ffmpeg", b"", b"error"
@@ -176,8 +178,8 @@ class TestRunPostRenderCheck:
         """Restituisce un mock di cv2.VideoCapture che emette frame sintetici."""
         cap = MagicMock()
         cap.get.side_effect = lambda prop: {
-            3: frame_w,   # CAP_PROP_FRAME_WIDTH
-            4: frame_h,   # CAP_PROP_FRAME_HEIGHT
+            3: frame_w,  # CAP_PROP_FRAME_WIDTH
+            4: frame_h,  # CAP_PROP_FRAME_HEIGHT
             7: len(frames),  # CAP_PROP_FRAME_COUNT
         }.get(prop, 0)
 
@@ -198,11 +200,18 @@ class TestRunPostRenderCheck:
         model.return_value = [mock_result]
         report_data = {}
 
-        with patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock), \
-             patch("person_anonymizer.postprocessing.tqdm", side_effect=lambda **kw: MagicMock(
-                 __enter__=lambda s: s, __exit__=lambda s, *a: None,
-                 update=MagicMock(), close=MagicMock()
-             )):
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock),
+            patch(
+                "person_anonymizer.postprocessing.tqdm",
+                side_effect=lambda **kw: MagicMock(
+                    __enter__=lambda s: s,
+                    __exit__=lambda s, *a: None,
+                    update=MagicMock(),
+                    close=MagicMock(),
+                ),
+            ),
+        ):
             result = run_post_render_check(
                 "video.avi", model, 0.5, report_data, config, check_scales=[1.0]
             )
@@ -227,11 +236,14 @@ class TestRunPostRenderCheck:
         report_data = {}
         config = PipelineConfig()
 
-        with patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock), \
-             patch("person_anonymizer.postprocessing.cv2.dnn") as mock_dnn, \
-             patch("person_anonymizer.postprocessing.tqdm", side_effect=lambda **kw: MagicMock(
-                 update=MagicMock(), close=MagicMock()
-             )):
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock),
+            patch("person_anonymizer.postprocessing.cv2.dnn") as mock_dnn,
+            patch(
+                "person_anonymizer.postprocessing.tqdm",
+                side_effect=lambda **kw: MagicMock(update=MagicMock(), close=MagicMock()),
+            ),
+        ):
             mock_dnn.NMSBoxes.return_value = np.array([[0]])
             result = run_post_render_check(
                 "video.avi", model, 0.5, report_data, config, check_scales=[1.0]
@@ -255,15 +267,16 @@ class TestRunPostRenderCheck:
         model.return_value = [mock_result]
         config = PipelineConfig()
 
-        with patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock), \
-             patch("person_anonymizer.postprocessing.cv2.resize", return_value=frame), \
-             patch("person_anonymizer.postprocessing.cv2.INTER_CUBIC", 2), \
-             patch("person_anonymizer.postprocessing.tqdm", side_effect=lambda **kw: MagicMock(
-                 update=MagicMock(), close=MagicMock()
-             )):
-            result = run_post_render_check(
-                "video.avi", model, 0.5, {}, config, check_scales=None
-            )
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock),
+            patch("person_anonymizer.postprocessing.cv2.resize", return_value=frame),
+            patch("person_anonymizer.postprocessing.cv2.INTER_CUBIC", 2),
+            patch(
+                "person_anonymizer.postprocessing.tqdm",
+                side_effect=lambda **kw: MagicMock(update=MagicMock(), close=MagicMock()),
+            ),
+        ):
+            result = run_post_render_check("video.avi", model, 0.5, {}, config, check_scales=None)
 
         # Assert — nessuna detection con mock vuoto, lista vuota
         assert result == []
@@ -285,15 +298,16 @@ class TestRunPostRenderCheck:
         report_data = {0: {"detections": 1}}
         config = PipelineConfig()
 
-        with patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock), \
-             patch("person_anonymizer.postprocessing.cv2.dnn") as mock_dnn, \
-             patch("person_anonymizer.postprocessing.tqdm", side_effect=lambda **kw: MagicMock(
-                 update=MagicMock(), close=MagicMock()
-             )):
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock),
+            patch("person_anonymizer.postprocessing.cv2.dnn") as mock_dnn,
+            patch(
+                "person_anonymizer.postprocessing.tqdm",
+                side_effect=lambda **kw: MagicMock(update=MagicMock(), close=MagicMock()),
+            ),
+        ):
             mock_dnn.NMSBoxes.return_value = np.array([[0]])
-            run_post_render_check(
-                "video.avi", model, 0.5, report_data, config, check_scales=[1.0]
-            )
+            run_post_render_check("video.avi", model, 0.5, report_data, config, check_scales=[1.0])
 
         # Assert — report_data aggiornato
         assert "post_check_alerts" in report_data[0]
@@ -312,10 +326,13 @@ class TestRunPostRenderCheck:
         model.return_value = [MagicMock(boxes=[])]
         config = PipelineConfig()
 
-        with patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock), \
-             patch("person_anonymizer.postprocessing.tqdm", side_effect=lambda **kw: MagicMock(
-                 update=MagicMock(), close=MagicMock()
-             )):
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap_mock),
+            patch(
+                "person_anonymizer.postprocessing.tqdm",
+                side_effect=lambda **kw: MagicMock(update=MagicMock(), close=MagicMock()),
+            ),
+        ):
             with pytest.raises(RuntimeError):
                 run_post_render_check("video.avi", model, 0.5, {}, config, check_scales=[1.0])
 

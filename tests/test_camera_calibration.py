@@ -89,9 +89,7 @@ class TestFindChessboardCorners:
             patch("cv2.findChessboardCorners", return_value=(True, fake_corners)),
             patch("cv2.cornerSubPix", return_value=fake_corners),
         ):
-            obj_pts, img_pts, _ = find_chessboard_corners(
-                ["img1.jpg", "img2.jpg", "img3.jpg"]
-            )
+            obj_pts, img_pts, _ = find_chessboard_corners(["img1.jpg", "img2.jpg", "img3.jpg"])
 
         assert len(obj_pts) == 3
         assert len(img_pts) == 3
@@ -292,10 +290,14 @@ class TestMain:
         mock_dist = np.zeros((1, 5), dtype=np.float64)
 
         args = [
-            "--images", str(tmp_path),
-            "--output", str(tmp_path / "out.npz"),
-            "--board-cols", "7",
-            "--board-rows", "5",
+            "--images",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out.npz"),
+            "--board-cols",
+            "7",
+            "--board-rows",
+            "5",
         ]
 
         with (

@@ -395,8 +395,9 @@ class TestReviewStateGetFrameJpeg:
         mock_jpeg_data = MagicMock()
         mock_jpeg_data.tobytes.return_value = b"jpeg_scaled"
 
-        with patch("cv2.imencode", return_value=(True, mock_jpeg_data)), patch(
-            "cv2.resize", return_value=np.zeros((720, 1280, 3), dtype=np.uint8)
+        with (
+            patch("cv2.imencode", return_value=(True, mock_jpeg_data)),
+            patch("cv2.resize", return_value=np.zeros((720, 1280, 3), dtype=np.uint8)),
         ):
             jpeg, scale = state.get_frame_jpeg(frame_idx=0, max_width=1280)
 
