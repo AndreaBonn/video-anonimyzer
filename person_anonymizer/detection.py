@@ -22,18 +22,24 @@ __all__ = [
 
 
 def get_window_patches(frame_w, frame_h, grid, overlap):
-    """Genera patch per sliding window."""
+    """
+    Genera una griglia ``grid x grid`` di patch che copre l'intero frame.
+
+    Ogni patch è larga ``frame / grid * (1 + overlap)``; il passo è scelto
+    perché l'ultima riga e l'ultima colonna finiscano sul bordo del frame,
+    quindi la sovrapposizione effettiva è almeno ``overlap``.
+    """
     if grid <= 0:
         raise ValueError(f"grid deve essere > 0, ricevuto {grid}")
-    step_x = int(frame_w / grid * (1 - overlap))
-    step_y = int(frame_h / grid * (1 - overlap))
     patch_w = int(frame_w / grid * (1 + overlap))
     patch_h = int(frame_h / grid * (1 + overlap))
+    step_x = max(0, frame_w - patch_w) / (grid - 1) if grid > 1 else 0.0
+    step_y = max(0, frame_h - patch_h) / (grid - 1) if grid > 1 else 0.0
     patches = []
     for row in range(grid):
         for col in range(grid):
-            x1 = col * step_x
-            y1 = row * step_y
+            x1 = round(col * step_x)
+            y1 = round(row * step_y)
             x2 = min(frame_w, x1 + patch_w)
             y2 = min(frame_h, y1 + patch_h)
             patches.append((x1, y1, x2, y2))

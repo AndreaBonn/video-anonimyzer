@@ -5,6 +5,7 @@ Le funzioni che richiedono cv2.dnn.NMSBoxes sono skipplate se cv2
 non è disponibile. Tutte le altre funzioni usano solo numpy.
 """
 
+import numpy as np
 import pytest
 
 try:
@@ -199,19 +200,7 @@ class TestApplyNms:
 class TestGetWindowPatches:
     """Verifica la generazione di patch per sliding window."""
 
-    @pytest.mark.parametrize(
-        "overlap",
-        [
-            0.0,
-            pytest.param(
-                0.3,
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason="Grid 3 with overlap 0.3 leaves the right and bottom borders uncovered",
-                ),
-            ),
-        ],
-    )
+    @pytest.mark.parametrize("overlap", [0.0, 0.3])
     def test_get_window_patches_grid_three_covers_bottom_right(self, overlap):
         # Arrange
         frame_w, frame_h = 300, 180
@@ -221,6 +210,32 @@ class TestGetWindowPatches:
 
         # Assert: the bottom-right pixel must belong to at least one patch.
         assert any(x1 <= 299 < x2 and y1 <= 179 < y2 for x1, y1, x2, y2 in patches), patches
+
+    @pytest.mark.parametrize(
+        ("frame_w", "frame_h", "grid", "overlap"),
+        [(640, 480, 3, 0.3), (1920, 1080, 3, 0.3), (1280, 720, 4, 0.5), (333, 211, 5, 0.1)],
+    )
+    def test_get_window_patches_union_covers_every_pixel(self, frame_w, frame_h, grid, overlap):
+        covered = np.zeros((frame_h, frame_w), dtype=bool)
+
+        for x1, y1, x2, y2 in get_window_patches(frame_w, frame_h, grid, overlap):
+            covered[y1:y2, x1:x2] = True
+
+        assert covered.all()
+
+    def test_get_window_patches_adjacent_patches_overlap_at_least_configured(self):
+        # 640 / 3 * 1.3 = 277 px wide patches, configured overlap 0.3 -> >= 83 px shared
+        patches = get_window_patches(640, 480, 3, 0.3)
+        first_row = patches[:3]
+
+        shared = [prev[2] - nxt[0] for prev, nxt in zip(first_row, first_row[1:])]
+
+        assert all(px >= 83 for px in shared), shared
+
+    def test_get_window_patches_last_patch_ends_on_frame_border(self):
+        patches = get_window_patches(640, 480, 3, 0.3)
+
+        assert patches[-1][2:] == (640, 480)
 
     def test_grid_3x3_count(self):
         # Arrange
