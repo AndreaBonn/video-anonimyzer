@@ -42,3 +42,27 @@ def test_cleanup_loop_removes_jobs_older_than_one_hour_in_both_storage_dirs():
         base_dirs=(web_app.UPLOAD_DIR, web_app.OUTPUT_DIR), max_age_s=3600, now=1000.0
     )
     sleep.assert_called_once_with(600)
+
+
+def test_cleanup_loop_logs_a_failure_and_keeps_running(caplog):
+    from person_anonymizer.web import app as web_app
+
+    class StopLoop(Exception):
+        pass
+
+    with patch.object(web_app.threading, "Thread") as thread_cls:
+        web_app._start_cleanup_thread(interval=600)
+    loop = thread_cls.call_args.kwargs["target"]
+
+    with (
+        patch.object(web_app, "cleanup_old_jobs", side_effect=PermissionError("denied")),
+        patch.object(web_app.time, "sleep", side_effect=StopLoop) as sleep,
+        caplog.at_level("WARNING", logger="person_anonymizer.web.app"),
+        pytest.raises(StopLoop),
+    ):
+        loop()
+
+    # The loop reached its sleep (it keeps running) and left a trace of the failure
+    sleep.assert_called_once_with(600)
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
+    assert caplog.records[0].exc_info is not None

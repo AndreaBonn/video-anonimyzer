@@ -3,6 +3,7 @@ Flask web app per Person Anonymizer.
 Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
+import logging
 import os
 import threading
 import time
@@ -27,6 +28,8 @@ from person_anonymizer.web.upload_validation import (
     parse_annotations_json,
 )
 from person_anonymizer.web.video_info import read_video_info
+
+_log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 _secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -72,7 +75,8 @@ def _start_cleanup_thread(interval=600):
                     now=time.time(),
                 )
             except Exception:
-                pass
+                # The thread must survive, but a failing cleanup fills the disk silently
+                _log.warning("Pulizia dei job scaduti fallita", exc_info=True)
             time.sleep(interval)
 
     t = threading.Thread(target=_loop, daemon=True, name="cleanup")
