@@ -119,132 +119,136 @@ def run_pipeline(ctx: PipelineContext, config=None) -> PostCheckOutcome:
     json_path = str(output_dir / f"{input_stem}_annotations.json")
 
     cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise PipelineInputError(f"Impossibile aprire il video: {input_path}")
+    try:
+        if not cap.isOpened():
+            raise PipelineInputError(f"Impossibile aprire il video: {input_path}")
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    if total_frames <= 0:
-        raise PipelineInputError("Impossibile determinare il numero di frame")
+        if total_frames <= 0:
+            raise PipelineInputError("Impossibile determinare il numero di frame")
 
-    res_label = f"{frame_w}x{frame_h}"
-    if frame_h >= 2160:
-        res_label = "4K"
-    elif frame_h >= 1080:
-        res_label = "1080p"
-    elif frame_h >= 720:
-        res_label = "720p"
-    elif frame_h >= 480:
-        res_label = "480p"
+        res_label = f"{frame_w}x{frame_h}"
+        if frame_h >= 2160:
+            res_label = "4K"
+        elif frame_h >= 1080:
+            res_label = "1080p"
+        elif frame_h >= 720:
+            res_label = "720p"
+        elif frame_h >= 480:
+            res_label = "480p"
 
-    do_interpolation = config.enable_subframe_interpolation and should_interpolate(
-        fps, config.interpolation_fps_threshold
-    )
+        do_interpolation = config.enable_subframe_interpolation and should_interpolate(
+            fps, config.interpolation_fps_threshold
+        )
 
-    if do_interpolation and fps < 3:
+        if do_interpolation and fps < 3:
+            print(
+                "ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe produrre artefatti. "
+                "Considera di disabilitarla."
+            )
+
+        method_label = (
+            f"{method} adattivo (base: {config.anonymization_intensity}px, "
+            f"ref: {config.adaptive_reference_height}px)"
+            if config.enable_adaptive_intensity
+            else f"{method} ({config.anonymization_intensity}px)"
+        )
+
+        print(f"\nPerson Anonymizer v{VERSION}")
+        print("-" * 40)
         print(
-            "ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe produrre artefatti. "
-            "Considera di disabilitarla."
+            f"Input:          {Path(input_path).name}  "
+            f"({total_frames} frame, {fps:.0f}fps, {res_label})"
         )
-
-    method_label = (
-        f"{method} adattivo (base: {config.anonymization_intensity}px, "
-        f"ref: {config.adaptive_reference_height}px)"
-        if config.enable_adaptive_intensity
-        else f"{method} ({config.anonymization_intensity}px)"
-    )
-
-    print(f"\nPerson Anonymizer v{VERSION}")
-    print("-" * 40)
-    print(
-        f"Input:          {Path(input_path).name}  "
-        f"({total_frames} frame, {fps:.0f}fps, {res_label})"
-    )
-    print(f"Output:         {Path(output_path).name}")
-    print(f"Modalità:      {mode}")
-    print(f"Metodo:         {method_label}")
-    print(f"Backend:        {config.detection_backend}")
-    print(f"Modello:        {config.yolo_model}  |  Confidenza: {config.detection_confidence}")
-    print(
-        f"Scale:          [{', '.join(f'{s}x' for s in config.inference_scales)}] + "
-        f"{', '.join(config.tta_augmentations)}"
-    )
-    sw_status = (
-        f"griglia {config.sliding_window_grid}x{config.sliding_window_grid}, "
-        f"overlap {int(config.sliding_window_overlap * 100)}%"
-        if config.enable_sliding_window
-        else "disabilitato"
-    )
-    print(f"Sliding window: {sw_status}")
-    fe_label = "abilitato" if config.enable_fisheye_correction else "disabilitato"
-    print(f"Fish-eye:       {fe_label}")
-    print(
-        f"Tracking:       ByteTrack (max_age: {config.track_max_age})"
-        if config.enable_tracking
-        else "Tracking:       disabilitato"
-    )
-    print(
-        f"Smoothing:      EMA (alpha: {config.smoothing_alpha})"
-        if config.enable_temporal_smoothing
-        else "Smoothing:      disabilitato"
-    )
-    interp_status = (
-        f"disabilitata (fps >= {config.interpolation_fps_threshold})"
-        if not do_interpolation
-        else f"abilitata ({fps:.0f}fps < {config.interpolation_fps_threshold}fps)"
-    )
-    print(f"Interpolazione: {interp_status}")
-    print("-" * 40)
-
-    backend = load_detection_backend(config)
-    model = backend.yolo_model
-
-    fisheye = FisheyeContext()
-    if (
-        config.enable_fisheye_correction
-        and config.camera_matrix is not None
-        and config.dist_coefficients is not None
-    ):
-        undist_map1, undist_map2 = build_undistortion_maps(
-            config.camera_matrix, config.dist_coefficients, frame_w, frame_h
+        print(f"Output:         {Path(output_path).name}")
+        print(f"Modalità:      {mode}")
+        print(f"Metodo:         {method_label}")
+        print(f"Backend:        {config.detection_backend}")
+        print(f"Modello:        {config.yolo_model}  |  Confidenza: {config.detection_confidence}")
+        print(
+            f"Scale:          [{', '.join(f'{s}x' for s in config.inference_scales)}] + "
+            f"{', '.join(config.tta_augmentations)}"
         )
-        fisheye = FisheyeContext(enabled=True, undist_map1=undist_map1, undist_map2=undist_map2)
+        sw_status = (
+            f"griglia {config.sliding_window_grid}x{config.sliding_window_grid}, "
+            f"overlap {int(config.sliding_window_overlap * 100)}%"
+            if config.enable_sliding_window
+            else "disabilitato"
+        )
+        print(f"Sliding window: {sw_status}")
+        fe_label = "abilitato" if config.enable_fisheye_correction else "disabilitato"
+        print(f"Fish-eye:       {fe_label}")
+        print(
+            f"Tracking:       ByteTrack (max_age: {config.track_max_age})"
+            if config.enable_tracking
+            else "Tracking:       disabilitato"
+        )
+        print(
+            f"Smoothing:      EMA (alpha: {config.smoothing_alpha})"
+            if config.enable_temporal_smoothing
+            else "Smoothing:      disabilitato"
+        )
+        interp_status = (
+            f"disabilitata (fps >= {config.interpolation_fps_threshold})"
+            if not do_interpolation
+            else f"abilitata ({fps:.0f}fps < {config.interpolation_fps_threshold}fps)"
+        )
+        print(f"Interpolazione: {interp_status}")
+        print("-" * 40)
 
-    report_data = {}
-    review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
+        backend = load_detection_backend(config)
+        model = backend.yolo_model
 
-    # ============================================
-    # FASE 1 — RILEVAMENTO AUTOMATICO (o caricamento JSON)
-    # ============================================
-    start_time = time.time()
+        fisheye = FisheyeContext()
+        if (
+            config.enable_fisheye_correction
+            and config.camera_matrix is not None
+            and config.dist_coefficients is not None
+        ):
+            undist_map1, undist_map2 = build_undistortion_maps(
+                config.camera_matrix, config.dist_coefficients, frame_w, frame_h
+            )
+            fisheye = FisheyeContext(enabled=True, undist_map1=undist_map1, undist_map2=undist_map2)
 
-    if review_json:
-        annotations, mode = load_annotations_from_json(review_json, config)
-        if ctx.normalize:
-            print("\n  Normalizzazione annotazioni...")
-            annotations, (n_before, n_after) = normalize_annotations(annotations, config)
-            print(f"  Poligoni prima:  {n_before}")
-            print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
-            mode = "auto"
+        report_data = {}
+        review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
+
+        # ============================================
+        # FASE 1 — RILEVAMENTO AUTOMATICO (o caricamento JSON)
+        # ============================================
+        start_time = time.time()
+
+        if review_json:
+            annotations, mode = load_annotations_from_json(review_json, config)
+            if ctx.normalize:
+                print("\n  Normalizzazione annotazioni...")
+                annotations, (n_before, n_after) = normalize_annotations(annotations, config)
+                print(f"  Poligoni prima:  {n_before}")
+                print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
+                mode = "auto"
+            cap.release()
+        elif config.detection_backend == "sam3" and backend.sam3_video_detector is not None:
+            cap.release()
+            annotations, report_data = backend.sam3_video_detector.detect_video(
+                input_path, config, stop_event
+            )
+        else:
+            annotations, report_data, _ = run_detection_loop(
+                cap,
+                total_frames,
+                model,
+                config,
+                fisheye,
+                stop_event,
+                sam3_refiner=backend.sam3_refiner,
+            )
+
+    finally:
         cap.release()
-    elif config.detection_backend == "sam3" and backend.sam3_video_detector is not None:
-        cap.release()
-        annotations, report_data = backend.sam3_video_detector.detect_video(
-            input_path, config, stop_event
-        )
-    else:
-        annotations, report_data, _ = run_detection_loop(
-            cap,
-            total_frames,
-            model,
-            config,
-            fisheye,
-            stop_event,
-            sam3_refiner=backend.sam3_refiner,
-        )
 
     _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
 
