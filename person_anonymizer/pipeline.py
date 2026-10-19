@@ -4,12 +4,13 @@ import logging
 import os
 import shutil
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import cv2
 
 from .backend_factory import load_detection_backend
-from .config import SUPPORTED_EXTENSIONS, VERSION, PipelineConfig
+from .config import SUPPORTED_EXTENSIONS, PipelineConfig
 from .models import (
     FisheyeContext,
     OutputPaths,
@@ -21,6 +22,7 @@ from .models import (
     VideoMeta,
 )
 from .output import load_annotations_from_json, save_outputs
+from .pipeline_report import RunLabels, build_output_paths, format_banner, format_summary
 from .pipeline_stages import run_detection_loop, run_manual_review_stage, run_refinement_loop
 from .postprocessing import normalize_annotations
 from .preprocessing import build_undistortion_maps, should_interpolate
@@ -29,6 +31,23 @@ from .rendering import render_video
 _log = logging.getLogger(__name__)
 
 __all__ = ["run_pipeline"]
+
+_DEFAULT_FPS = 25.0
+_LOW_FPS_LIMIT = 3
+_EMPTY_REVIEW_STATS = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
+
+
+@dataclass(frozen=True)
+class _RunSetup:
+    """Values fixed for the whole run, shared by the stage helpers."""
+
+    ctx: PipelineContext
+    config: PipelineConfig
+    meta: VideoMeta
+    fisheye: FisheyeContext
+    method: str
+    mode: str
+    paths: OutputPaths
 
 
 def _raise_if_stopped(stop_event, temp_paths: tuple[str, ...]) -> None:
@@ -50,8 +69,180 @@ def _raise_if_stopped(stop_event, temp_paths: tuple[str, ...]) -> None:
     raise PipelineStoppedError("Pipeline interrotta dall'utente")
 
 
+def _validate_inputs(ctx: PipelineContext) -> None:
+    if ctx.normalize and not ctx.review:
+        raise PipelineInputError("--normalize richiede --review <json>")
+    if not os.path.isfile(ctx.input):
+        raise PipelineInputError(f"File non trovato: {ctx.input}")
+    ext = Path(ctx.input).suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+        raise PipelineInputError(f"Formato non supportato '{ext}'. Supportati: {supported}")
+
+
+def _warn_if_no_ffmpeg() -> bool:
+    available = shutil.which("ffmpeg") is not None
+    if not available:
+        print("ATTENZIONE: ffmpeg non trovato nel PATH.")
+        print("  L'audio non verrà preservato nel video di output.")
+        print("  Installare ffmpeg: sudo apt install ffmpeg")
+    return available
+
+
+def _open_video(input_path: str) -> tuple[cv2.VideoCapture, VideoMeta]:
+    """Open the input video and read its metadata.
+
+    The capture is released here when opening or probing fails, so the caller
+    owns it only once this function returns.
+    """
+    cap = cv2.VideoCapture(input_path)
+    try:
+        if not cap.isOpened():
+            raise PipelineInputError(f"Impossibile aprire il video: {input_path}")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            raise PipelineInputError("Impossibile determinare il numero di frame")
+        meta = VideoMeta(
+            fps=cap.get(cv2.CAP_PROP_FPS) or _DEFAULT_FPS,
+            frame_w=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            frame_h=int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            total_frames=total_frames,
+        )
+    except BaseException:
+        cap.release()
+        raise
+    return cap, meta
+
+
+def _announce(setup: _RunSetup) -> None:
+    """Print the run banner, preceded by the low-fps warning when it applies."""
+    ctx, config, meta = setup.ctx, setup.config, setup.meta
+    interpolating = config.enable_subframe_interpolation and should_interpolate(
+        meta.fps, config.interpolation_fps_threshold
+    )
+    if interpolating and meta.fps < _LOW_FPS_LIMIT:
+        print(
+            "ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe produrre artefatti. "
+            "Considera di disabilitarla."
+        )
+    labels = RunLabels(
+        input_name=Path(ctx.input).name,
+        output_name=Path(setup.paths.output).name,
+        mode=setup.mode,
+        method=setup.method,
+    )
+    print(format_banner(meta=meta, labels=labels, config=config, do_interpolation=interpolating))
+
+
+def build_fisheye(config: PipelineConfig, frame_w: int, frame_h: int) -> FisheyeContext:
+    """Return the undistortion context, disabled unless correction and calibration are set."""
+    camera, dist = config.camera_matrix, config.dist_coefficients
+    if not config.enable_fisheye_correction or camera is None or dist is None:
+        return FisheyeContext()
+    map1, map2 = build_undistortion_maps(camera, dist, frame_w, frame_h)
+    return FisheyeContext(enabled=True, undist_map1=map1, undist_map2=map2)
+
+
+def _detect_or_load(cap, setup: _RunSetup, backend) -> tuple[dict, dict, str]:
+    """Phase 1: load annotations from JSON or detect. Returns the final mode."""
+    ctx, config, mode = setup.ctx, setup.config, setup.mode
+    if ctx.review:
+        annotations, mode = load_annotations_from_json(ctx.review, config)
+        if ctx.normalize:
+            print("\n  Normalizzazione annotazioni...")
+            annotations, (n_before, n_after) = normalize_annotations(annotations, config)
+            print(f"  Poligoni prima:  {n_before}")
+            print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
+            mode = "auto"
+        cap.release()
+        return annotations, {}, mode
+    if config.detection_backend == "sam3" and backend.sam3_video_detector is not None:
+        cap.release()
+        detector = backend.sam3_video_detector
+        annotations, report_data = detector.detect_video(ctx.input, config, ctx.stop_event)
+    else:
+        annotations, report_data, _ = run_detection_loop(
+            cap,
+            setup.meta.total_frames,
+            backend.yolo_model,
+            config,
+            setup.fisheye,
+            ctx.stop_event,
+            sam3_refiner=backend.sam3_refiner,
+        )
+    return annotations, report_data, mode
+
+
+def _refine(setup: _RunSetup, annotations: dict, model, report_data: dict) -> tuple:
+    """Phase 2: auto-refinement, skipped when annotations come from JSON."""
+    ctx, meta = setup.ctx, setup.meta
+    if ctx.review:
+        return annotations, 0, 0, PostCheckOutcome(status="skipped")
+    annotations, passes, added, post_check = run_refinement_loop(
+        ctx.input,
+        annotations,
+        model,
+        setup.config,
+        meta.fps,
+        meta.frame_w,
+        meta.frame_h,
+        setup.method,
+        setup.fisheye,
+        report_data,
+        setup.paths.temp_video,
+        ctx.stop_event,
+    )
+    if post_check.status == "residual":
+        print(
+            "  -> Verranno mostrati nella revisione manuale."
+            if setup.mode == "manual"
+            else "  -> Rieseguire con --mode manual per correzione."
+        )
+    return annotations, passes, added, post_check
+
+
+def _review(setup: _RunSetup, annotations: dict, mode: str) -> tuple[dict, dict]:
+    """Phase 3: manual review, or a no-op with zeroed stats in auto mode."""
+    if mode != "manual":
+        print("\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
+        return annotations, dict(_EMPTY_REVIEW_STATS)
+    ctx, meta = setup.ctx, setup.meta
+    return run_manual_review_stage(
+        ctx,
+        ctx.input,
+        annotations,
+        setup.config,
+        meta.total_frames,
+        meta.fps,
+        meta.frame_w,
+        meta.frame_h,
+        setup.fisheye,
+    )
+
+
+def _render(setup: _RunSetup, annotations: dict) -> None:
+    print("\n[FASE 4/5] Rendering finale...")
+    ctx, meta, paths = setup.ctx, setup.meta, setup.paths
+    render_video(
+        ctx.input,
+        paths.temp_video,
+        annotations,
+        meta.fps,
+        meta.frame_w,
+        meta.frame_h,
+        setup.method,
+        setup.fisheye,
+        setup.config,
+        debug_path=None if ctx.no_debug else paths.temp_debug,
+        desc="Rendering finale",
+        stop_event=ctx.stop_event,
+    )
+
+
 def run_pipeline(ctx: PipelineContext, config=None) -> PostCheckOutcome:
     """Esegue la pipeline completa di anonimizzazione.
+
+    Eccezione ai 30 righe: fasi, controlli di stop e ciclo di ``cap`` sono la spec dell'ordine.
 
     Parameters
     ----------
@@ -76,296 +267,51 @@ def run_pipeline(ctx: PipelineContext, config=None) -> PostCheckOutcome:
     """
     if config is None:
         config = PipelineConfig()
-
-    input_path = ctx.input
+    _validate_inputs(ctx)
+    ffmpeg_available = _warn_if_no_ffmpeg()
     mode = ctx.mode or config.operation_mode
     method = ctx.method or config.anonymization_method
-    enable_debug = not ctx.no_debug
-    enable_report = not ctx.no_report
-    review_json = ctx.review
-    stop_event = ctx.stop_event
+    paths = build_output_paths(input_path=ctx.input, output=ctx.output)
+    temps = (paths.temp_video, paths.temp_debug)
 
-    if ctx.normalize and not review_json:
-        raise PipelineInputError("--normalize richiede --review <json>")
-
-    if not os.path.isfile(input_path):
-        raise PipelineInputError(f"File non trovato: {input_path}")
-
-    ext = Path(input_path).suffix.lower()
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise PipelineInputError(
-            f"Formato non supportato '{ext}'. Supportati: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-        )
-
-    ffmpeg_available = shutil.which("ffmpeg") is not None
-    if not ffmpeg_available:
-        print("ATTENZIONE: ffmpeg non trovato nel PATH.")
-        print("  L'audio non verrà preservato nel video di output.")
-        print("  Installare ffmpeg: sudo apt install ffmpeg")
-
-    input_stem = Path(input_path).stem
-    input_dir = Path(input_path).parent
-    if ctx.output:
-        output_path = ctx.output
-        output_dir = Path(output_path).parent
-    else:
-        output_dir = input_dir
-        output_path = str(output_dir / f"{input_stem}_anonymized.mp4")
-
-    temp_video_path = str(output_dir / f"{input_stem}_temp_noaudio.avi")
-    temp_debug_path = str(output_dir / f"{input_stem}_temp_debug.avi")
-    debug_path = str(output_dir / f"{input_stem}_debug.mp4")
-    report_path = str(output_dir / f"{input_stem}_report.csv")
-    json_path = str(output_dir / f"{input_stem}_annotations.json")
-
-    cap = cv2.VideoCapture(input_path)
+    cap, meta = _open_video(ctx.input)
+    # The banner is printed before the backend loads and the fisheye maps are
+    # built after it, as before the refactor: stdout order and which error
+    # surfaces first are part of the CLI and web contract.
+    setup = _RunSetup(ctx, config, meta, FisheyeContext(), method, mode, paths)
     try:
-        if not cap.isOpened():
-            raise PipelineInputError(f"Impossibile aprire il video: {input_path}")
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        if total_frames <= 0:
-            raise PipelineInputError("Impossibile determinare il numero di frame")
-
-        res_label = f"{frame_w}x{frame_h}"
-        if frame_h >= 2160:
-            res_label = "4K"
-        elif frame_h >= 1080:
-            res_label = "1080p"
-        elif frame_h >= 720:
-            res_label = "720p"
-        elif frame_h >= 480:
-            res_label = "480p"
-
-        do_interpolation = config.enable_subframe_interpolation and should_interpolate(
-            fps, config.interpolation_fps_threshold
-        )
-
-        if do_interpolation and fps < 3:
-            print(
-                "ATTENZIONE: fps molto basso (< 3). L'interpolazione potrebbe produrre artefatti. "
-                "Considera di disabilitarla."
-            )
-
-        method_label = (
-            f"{method} adattivo (base: {config.anonymization_intensity}px, "
-            f"ref: {config.adaptive_reference_height}px)"
-            if config.enable_adaptive_intensity
-            else f"{method} ({config.anonymization_intensity}px)"
-        )
-
-        print(f"\nPerson Anonymizer v{VERSION}")
-        print("-" * 40)
-        print(
-            f"Input:          {Path(input_path).name}  "
-            f"({total_frames} frame, {fps:.0f}fps, {res_label})"
-        )
-        print(f"Output:         {Path(output_path).name}")
-        print(f"Modalità:      {mode}")
-        print(f"Metodo:         {method_label}")
-        print(f"Backend:        {config.detection_backend}")
-        print(f"Modello:        {config.yolo_model}  |  Confidenza: {config.detection_confidence}")
-        print(
-            f"Scale:          [{', '.join(f'{s}x' for s in config.inference_scales)}] + "
-            f"{', '.join(config.tta_augmentations)}"
-        )
-        sw_status = (
-            f"griglia {config.sliding_window_grid}x{config.sliding_window_grid}, "
-            f"overlap {int(config.sliding_window_overlap * 100)}%"
-            if config.enable_sliding_window
-            else "disabilitato"
-        )
-        print(f"Sliding window: {sw_status}")
-        fe_label = "abilitato" if config.enable_fisheye_correction else "disabilitato"
-        print(f"Fish-eye:       {fe_label}")
-        print(
-            f"Tracking:       ByteTrack (max_age: {config.track_max_age})"
-            if config.enable_tracking
-            else "Tracking:       disabilitato"
-        )
-        print(
-            f"Smoothing:      EMA (alpha: {config.smoothing_alpha})"
-            if config.enable_temporal_smoothing
-            else "Smoothing:      disabilitato"
-        )
-        interp_status = (
-            f"disabilitata (fps >= {config.interpolation_fps_threshold})"
-            if not do_interpolation
-            else f"abilitata ({fps:.0f}fps < {config.interpolation_fps_threshold}fps)"
-        )
-        print(f"Interpolazione: {interp_status}")
-        print("-" * 40)
-
+        _announce(setup)
         backend = load_detection_backend(config)
-        model = backend.yolo_model
-
-        fisheye = FisheyeContext()
-        if (
-            config.enable_fisheye_correction
-            and config.camera_matrix is not None
-            and config.dist_coefficients is not None
-        ):
-            undist_map1, undist_map2 = build_undistortion_maps(
-                config.camera_matrix, config.dist_coefficients, frame_w, frame_h
-            )
-            fisheye = FisheyeContext(enabled=True, undist_map1=undist_map1, undist_map2=undist_map2)
-
-        report_data = {}
-        review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
-
-        # ============================================
-        # FASE 1 — RILEVAMENTO AUTOMATICO (o caricamento JSON)
-        # ============================================
+        setup = replace(setup, fisheye=build_fisheye(config, meta.frame_w, meta.frame_h))
         start_time = time.time()
-
-        if review_json:
-            annotations, mode = load_annotations_from_json(review_json, config)
-            if ctx.normalize:
-                print("\n  Normalizzazione annotazioni...")
-                annotations, (n_before, n_after) = normalize_annotations(annotations, config)
-                print(f"  Poligoni prima:  {n_before}")
-                print(f"  Rettangoli dopo: {n_after}  (riduzione: {n_before - n_after})")
-                mode = "auto"
-            cap.release()
-        elif config.detection_backend == "sam3" and backend.sam3_video_detector is not None:
-            cap.release()
-            annotations, report_data = backend.sam3_video_detector.detect_video(
-                input_path, config, stop_event
-            )
-        else:
-            annotations, report_data, _ = run_detection_loop(
-                cap,
-                total_frames,
-                model,
-                config,
-                fisheye,
-                stop_event,
-                sam3_refiner=backend.sam3_refiner,
-            )
-
+        annotations, report_data, mode = _detect_or_load(cap, setup, backend)
     finally:
         cap.release()
 
-    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
-
-    # ============================================
-    # FASE 2 — AUTO REFINEMENT LOOP
-    # ============================================
-    if not review_json:
-        (
-            annotations,
-            actual_refinement_passes,
-            refinement_annotations_added,
-            post_check,
-        ) = run_refinement_loop(
-            input_path,
-            annotations,
-            model,
-            config,
-            fps,
-            frame_w,
-            frame_h,
-            method,
-            fisheye,
-            report_data,
-            temp_video_path,
-            stop_event,
-        )
-    else:
-        actual_refinement_passes, refinement_annotations_added = 0, 0
-        post_check = PostCheckOutcome(status="skipped")
-
-    if post_check.status == "residual":
-        print(
-            "  -> Verranno mostrati nella revisione manuale."
-            if mode == "manual"
-            else "  -> Rieseguire con --mode manual per correzione."
-        )
-
-    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
-
-    # ============================================
-    # FASE 3 — REVISIONE MANUALE
-    # ============================================
-    if mode == "manual":
-        annotations, review_stats = run_manual_review_stage(
-            ctx,
-            input_path,
-            annotations,
-            config,
-            total_frames,
-            fps,
-            frame_w,
-            frame_h,
-            fisheye,
-        )
-    else:
-        print("\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
-
-    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
-
-    # ============================================
-    # FASE 4 — RENDERING FINALE
-    # ============================================
-    print("\n[FASE 4/5] Rendering finale...")
-    render_video(
-        input_path,
-        temp_video_path,
-        annotations,
-        fps,
-        frame_w,
-        frame_h,
-        method,
-        fisheye,
-        config,
-        debug_path=temp_debug_path if enable_debug else None,
-        desc="Rendering finale",
-        stop_event=stop_event,
+    _raise_if_stopped(ctx.stop_event, temps)
+    annotations, passes, added, post_check = _refine(
+        setup, annotations, backend.yolo_model, report_data
     )
+    _raise_if_stopped(ctx.stop_event, temps)
+    annotations, review_stats = _review(setup, annotations, mode)
+    _raise_if_stopped(ctx.stop_event, temps)
+    _render(setup, annotations)
+    _raise_if_stopped(ctx.stop_event, temps)
 
-    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
-
-    # ============================================
-    # FASE 5 — POST-PROCESSING
-    # ============================================
     print("\n[FASE 5/5] Post-processing...")
-    paths = OutputPaths(
-        output=output_path,
-        temp_video=temp_video_path,
-        temp_debug=temp_debug_path,
-        debug=debug_path,
-        report=report_path,
-        json=json_path,
-    )
-    meta = VideoMeta(fps=fps, frame_w=frame_w, frame_h=frame_h, total_frames=total_frames)
     result = PipelineResult(
         annotations=annotations,
         report_data=report_data,
         review_stats=review_stats,
         method=method,
         mode=mode,
-        enable_debug=enable_debug,
-        enable_report=enable_report,
+        enable_debug=not ctx.no_debug,
+        enable_report=not ctx.no_report,
         ffmpeg_available=ffmpeg_available,
-        actual_refinement_passes=actual_refinement_passes,
-        refinement_annotations_added=refinement_annotations_added,
+        actual_refinement_passes=passes,
+        refinement_annotations_added=added,
     )
-    save_outputs(ctx, result, config, input_path, paths, meta)
-
-    total_time = time.time() - start_time
-    minutes, seconds = int(total_time // 60), int(total_time % 60)
-    print("-" * 40)
-    print(f"Completato  —  Tempo totale: {minutes}m {seconds}s")
-    print(f"  Output:       {Path(paths.output).name}")
-    if enable_debug:
-        print(f"  Debug:        {Path(paths.debug).name}")
-    if enable_report:
-        print(f"  Report:       {Path(paths.report).name}")
-    if mode == "manual" or ctx.normalize:
-        print(f"  Annotazioni:  {Path(paths.json).name}")
-    print()
+    save_outputs(ctx, result, config, ctx.input, paths, meta)
+    elapsed = time.time() - start_time
+    print(format_summary(elapsed_s=elapsed, paths=paths, result=result, normalized=ctx.normalize))
     return post_check
