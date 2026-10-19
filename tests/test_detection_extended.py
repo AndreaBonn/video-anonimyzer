@@ -6,8 +6,10 @@ detect_and_rescale, run_multiscale_inference (TTA flip), run_full_detection.
 Mock: ultralytics YOLO model, cv2.dnn.NMSBoxes.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import cv2
 import numpy as np
 import pytest
 
@@ -23,6 +25,77 @@ from person_anonymizer.detection import (
 # ============================================================
 # Helpers
 # ============================================================
+
+
+def _detect_white_region(image, **kwargs):
+    """Return the bounding box of bright pixels in the actual model input."""
+    rows, columns = np.nonzero(np.all(image >= 128, axis=2))
+    boxes = []
+    if rows.size:
+        boxes.append(
+            SimpleNamespace(
+                xyxy=[[columns.min(), rows.min(), columns.max() + 1, rows.max() + 1]],
+                conf=[0.9],
+            )
+        )
+    return [SimpleNamespace(boxes=boxes)]
+
+
+def test_run_sliding_window_rectangular_patch_preserves_region_coordinates():
+    # Arrange: the white region is inside (50, 10, 110, 50), outside its transpose.
+    frame = np.zeros((80, 160, 3), dtype=np.uint8)
+    frame[20:35, 90:110] = 255
+
+    # Act
+    boxes, hits = run_sliding_window(
+        model=_detect_white_region,
+        frame=frame,
+        patches=[(50, 10, 110, 50)],
+        conf=0.5,
+        motion_regions=None,
+    )
+
+    # Assert
+    assert hits == 1
+    assert len(boxes) == 1
+    assert boxes[0] == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
+
+
+def test_detect_and_rescale_rectangular_image_scale_two_restores_region_coordinates():
+    # Arrange: real cubic upscaling doubles the region's half-open bounds.
+    frame = np.zeros((80, 160, 3), dtype=np.uint8)
+    frame[20:35, 90:110] = 255
+    scaled = cv2.resize(src=frame, dsize=(320, 160), interpolation=cv2.INTER_CUBIC)
+
+    # Act
+    boxes = detect_and_rescale(model=_detect_white_region, frame=scaled, conf=0.5, scale=2.0)
+
+    # Assert
+    assert len(boxes) == 1
+    assert boxes[0] == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
+
+
+def test_run_multiscale_inference_rectangular_scale_two_flip_restores_region_coordinates():
+    # Arrange: horizontal flip moves the scaled region from x=[180,220) to [100,140).
+    frame = np.zeros((80, 160, 3), dtype=np.uint8)
+    frame[20:35, 90:110] = 255
+
+    # Act
+    boxes, hits = run_multiscale_inference(
+        model=_detect_white_region,
+        frame=frame,
+        scales=[2.0],
+        augmentations=["flip_h"],
+        conf=0.5,
+        orig_w=160,
+        orig_h=80,
+    )
+
+    # Assert: both native and flipped detections refer to the original region.
+    assert hits == 2
+    assert len(boxes) == 2
+    assert boxes[0] == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
+    assert boxes[1] == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
 
 
 def _make_fake_model(boxes_xyxy=None, conf=None):
@@ -353,54 +426,61 @@ class TestRunFullDetection:
             nms_iou_threshold=0.55,
         )
 
-    def test_with_sliding_window_disabled(self):
-        # Arrange — sliding window disabilitata
-        model = _make_fake_model()
-        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    def test_run_full_detection_sliding_window_disabled_keeps_multiscale_box(self):
+        # Arrange: a detectable region remains available to multiscale inference.
+        frame = np.zeros((80, 160, 3), dtype=np.uint8)
+        frame[20:35, 90:110] = 255
         config = self._make_config(sliding_window=False)
-        patches = [(0, 0, 50, 50)]
 
-        with (
-            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
-            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
-        ):
-            all_boxes, sw_hits, ms_hits = run_full_detection(
-                model,
-                frame,
-                conf=0.5,
-                frame_w=100,
-                frame_h=100,
-                motion_regions=None,
-                patches=patches,
-                config=config,
-            )
+        # Act
+        boxes, sw_hits, ms_hits = run_full_detection(
+            model=_detect_white_region,
+            frame=frame,
+            conf=0.5,
+            frame_w=160,
+            frame_h=80,
+            motion_regions=None,
+            patches=[(50, 10, 130, 50)],
+            config=config,
+        )
 
-        # Assert — sw_hits=0 (non eseguito), ms_hits=0 (nessuna detection)
+        # Assert
         assert sw_hits == 0
+        assert ms_hits == 1
+        assert len(boxes) == 1
+        assert boxes[0] == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
 
-    def test_with_sliding_window_enabled_no_patches(self):
-        # Arrange — patches vuota → sliding window non eseguita
-        model = _make_fake_model()
-        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    @pytest.mark.parametrize(
+        ("patches", "expected_sw_hits"),
+        [([], 0), ([(50, 10, 130, 50)], 1)],
+        ids=["no_patches", "detectable_patch"],
+    )
+    def test_run_full_detection_sliding_window_enabled_reports_strategy_hits(
+        self, patches, expected_sw_hits
+    ):
+        # Arrange
+        frame = np.zeros((80, 160, 3), dtype=np.uint8)
+        frame[20:35, 90:110] = 255
         config = self._make_config(sliding_window=True)
 
-        with (
-            patch("person_anonymizer.detection.cv2.resize", return_value=frame),
-            patch("person_anonymizer.detection.cv2.INTER_LINEAR", 1),
-        ):
-            all_boxes, sw_hits, ms_hits = run_full_detection(
-                model,
-                frame,
-                conf=0.5,
-                frame_w=100,
-                frame_h=100,
-                motion_regions=None,
-                patches=[],
-                config=config,
-            )
+        # Act
+        boxes, sw_hits, ms_hits = run_full_detection(
+            model=_detect_white_region,
+            frame=frame,
+            conf=0.5,
+            frame_w=160,
+            frame_h=80,
+            motion_regions=None,
+            patches=patches,
+            config=config,
+        )
 
-        # Assert — patches vuota → sliding window saltata
-        assert sw_hits == 0
+        # Assert: each enabled strategy contributes its own detected box.
+        assert sw_hits == expected_sw_hits
+        assert ms_hits == 1
+        assert boxes
+        for box in boxes:
+            assert box == pytest.approx([90.0, 20.0, 110.0, 35.0, 0.9])
 
     def test_returns_tuple_of_three(self):
         # Arrange

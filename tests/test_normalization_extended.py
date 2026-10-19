@@ -7,8 +7,14 @@ normalize_annotations con poligoni reali (righe 157-181).
 
 import logging
 
+import pytest
+
 from person_anonymizer.config import PipelineConfig
-from person_anonymizer.normalization import _merge_overlapping_rects, normalize_annotations
+from person_anonymizer.normalization import (
+    _merge_overlapping_rects,
+    _rects_overlap,
+    normalize_annotations,
+)
 
 # ============================================================
 # _merge_overlapping_rects — riga 91 (warning n > 100)
@@ -234,3 +240,52 @@ class TestNormalizeAnnotationsWithPolygons:
         assert before == 3
         assert after == 3
         assert len(result) == 3
+
+
+@pytest.mark.parametrize(
+    ("other", "expected"),
+    [
+        ((0, 10, 5, 10), False),
+        ((10, 0, 10, 5), False),
+        ((0, 10, 10, 10), False),
+        ((20, 10, 10, 10), False),
+        ((10, 0, 10, 10), False),
+        ((10, 20, 10, 10), False),
+        ((5, 10, 10, 10), True),
+        ((10, 5, 10, 10), True),
+    ],
+    ids=[
+        "left_gap",
+        "above_gap",
+        "left_touch",
+        "right_touch",
+        "top_touch",
+        "bottom_touch",
+        "horizontal_overlap",
+        "vertical_overlap",
+    ],
+)
+def test_rects_overlap_specular_pairs_return_expected_intersection(
+    other: tuple[int, int, int, int],
+    expected: bool,
+) -> None:
+    # Arrange
+    rectangle = (10, 10, 10, 10)
+    # Act
+    forward = _rects_overlap(r1=rectangle, r2=other)
+    reverse = _rects_overlap(r1=other, r2=rectangle)
+    # Assert
+    assert forward is expected
+    assert reverse is expected
+
+
+@pytest.mark.parametrize(
+    "other",
+    [(10, 10, 10, 10), (12, 12, 4, 4), (5, 5, 20, 20)],
+    ids=["identical", "contained", "containing"],
+)
+def test_rects_overlap_identical_or_nested_rectangles_overlap(
+    other: tuple[int, int, int, int],
+) -> None:
+    assert _rects_overlap(r1=(10, 10, 10, 10), r2=other) is True
+    assert _rects_overlap(r1=other, r2=(10, 10, 10, 10)) is True

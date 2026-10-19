@@ -318,7 +318,7 @@ class TestObscurePolygon:
 
     def test_pixelation_modifies_region(self):
         # Arrange
-        frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
         points = [(10, 10), (50, 10), (50, 50), (10, 50)]
         original = frame.copy()
         # Act
@@ -328,7 +328,7 @@ class TestObscurePolygon:
 
     def test_blur_modifies_region(self):
         # Arrange
-        frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
         points = [(20, 20), (80, 20), (80, 80), (20, 80)]
         original = frame.copy()
         # Act
@@ -345,26 +345,35 @@ class TestObscurePolygon:
         # Assert — modifica in-place, stesso oggetto
         assert result is frame
 
-    def test_zero_area_polygon_returns_unchanged(self):
+    def test_obscure_polygon_zero_area_preserves_point_and_obscures_control(self) -> None:
         # Arrange
-        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
         original = frame.copy()
-        points = [(50, 50), (50, 50), (50, 50)]  # area zero
+        points = [(50, 50), (50, 50), (50, 50)]
         # Act
-        result = obscure_polygon(frame, points, "pixelation", 10)
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=10)
+        control = obscure_polygon(
+            frame=original.copy(),
+            points=[(40, 40), (59, 40), (59, 59), (40, 59)],
+            method="pixelation",
+            intensity=10,
+        )
         # Assert
-        assert np.array_equal(result, original)
+        np.testing.assert_array_equal(result, original)
+        assert np.any(control[40:60, 40:60] != original[40:60, 40:60])
 
-    def test_outside_pixels_unchanged(self):
+    def test_obscure_polygon_rectangle_changes_inside_preserves_outside(self) -> None:
         # Arrange
-        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
-        points = [(40, 40), (60, 40), (60, 60), (40, 60)]
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
+        points = [(40, 40), (59, 40), (59, 59), (40, 59)]
         original = frame.copy()
+        outside = np.ones((100, 100), dtype=bool)
+        outside[40:60, 40:60] = False
         # Act
-        obscure_polygon(frame, points, "pixelation", 10)
-        # Assert — i pixel lontani dal poligono non devono cambiare
-        assert np.array_equal(frame[0:10, 0:10], original[0:10, 0:10])
-        assert np.array_equal(frame[90:100, 90:100], original[90:100, 90:100])
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=10)
+        # Assert
+        assert np.any(result[40:60, 40:60] != original[40:60, 40:60])
+        np.testing.assert_array_equal(result[outside], original[outside])
 
 
 # ============================================================

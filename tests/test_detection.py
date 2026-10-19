@@ -120,6 +120,31 @@ class TestComputeIouBoxes:
 class TestApplyNms:
     """Verifica Non-Maximum Suppression."""
 
+    @pytest.mark.parametrize(
+        ("second_x", "expected"),
+        [
+            (130.0, [[100.0, 200.0, 170.0, 240.0, 0.9], [130.0, 200.0, 200.0, 240.0, 0.8]]),
+            (117.5, [[100.0, 200.0, 170.0, 240.0, 0.9]]),
+        ],
+        ids=["iou_0_4_keeps_both", "iou_0_6_keeps_highest_score"],
+    )
+    def test_apply_nms_translated_overlaps_respects_threshold(self, second_x, expected):
+        # Arrange: both boxes have area 70 * 40 = 2800.
+        # At x=130: intersection=40*40=1600, union=4000, IoU=0.4.
+        # At x=117.5: intersection=52.5*40=2100, union=3500, IoU=0.6.
+        boxes = [
+            [second_x, 200.0, second_x + 70.0, 240.0, 0.8],
+            [100.0, 200.0, 170.0, 240.0, 0.9],
+        ]
+
+        # Act
+        result = apply_nms(boxes=boxes, iou_threshold=0.5)
+
+        # Assert
+        assert len(result) == len(expected)
+        for actual, wanted in zip(result, expected, strict=True):
+            assert actual == pytest.approx(wanted)
+
     def test_empty_list(self):
         # Arrange / Act
         result = apply_nms([], iou_threshold=0.5)
@@ -173,6 +198,29 @@ class TestApplyNms:
 
 class TestGetWindowPatches:
     """Verifica la generazione di patch per sliding window."""
+
+    @pytest.mark.parametrize(
+        "overlap",
+        [
+            0.0,
+            pytest.param(
+                0.3,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason="Grid 3 with overlap 0.3 leaves the right and bottom borders uncovered",
+                ),
+            ),
+        ],
+    )
+    def test_get_window_patches_grid_three_covers_bottom_right(self, overlap):
+        # Arrange
+        frame_w, frame_h = 300, 180
+
+        # Act
+        patches = get_window_patches(frame_w=frame_w, frame_h=frame_h, grid=3, overlap=overlap)
+
+        # Assert: the bottom-right pixel must belong to at least one patch.
+        assert any(x1 <= 299 < x2 and y1 <= 179 < y2 for x1, y1, x2, y2 in patches), patches
 
     def test_grid_3x3_count(self):
         # Arrange

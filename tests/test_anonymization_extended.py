@@ -1,8 +1,8 @@
 """
 Test aggiuntivi per anonymization.py — coverage righe mancanti.
 
-Copre: obscure_polygon (righe 96-97: w==0 o h==0 dopo clamping),
-box_to_polygon (righe 145-147: frame_w/frame_h None o falsy).
+Copre: obscure_polygon su poligoni degeneri e ai bordi del frame,
+box_to_polygon con frame_w/frame_h None o falsy.
 """
 
 import numpy as np
@@ -15,68 +15,103 @@ try:
 except ImportError:
     CV2_AVAILABLE = False
 
-from person_anonymizer.anonymization import box_to_polygon, obscure_polygon
+from person_anonymizer.anonymization import (
+    box_to_polygon,
+    compute_adaptive_intensity,
+    obscure_polygon,
+)
+from person_anonymizer.config import PipelineConfig
 
 # ============================================================
-# obscure_polygon — righe 96-97 (w == 0 o h == 0)
+# obscure_polygon — poligoni degeneri e bordi del frame
 # ============================================================
 
 
 @pytest.mark.skipif(not CV2_AVAILABLE, reason="cv2 non disponibile")
 class TestObscurePolygonEdgeCases:
-    """Verifica i casi in cui il bounding rect ha larghezza o altezza zero."""
+    """Poligoni degeneri (linee, punti) e poligoni sul bordo del frame."""
 
-    def test_zero_width_polygon_returns_unchanged_frame(self):
-        # Arrange — poligono con punti x tutti uguali → w = 0 dopo boundingRect
-        frame = np.ones((100, 100, 3), dtype=np.uint8) * 128
+    @pytest.mark.parametrize("axis", ["vertical", "horizontal"])
+    def test_obscure_polygon_line_changes_inside_preserves_outside(self, axis: str) -> None:
+        # Arrange
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
         original = frame.copy()
-        # Tutti i punti sulla stessa colonna x=50 → w=0
-        points = [(50, 10), (50, 50), (50, 80)]
-
+        inside = np.zeros((100, 100), dtype=bool)
+        if axis == "vertical":
+            points = [(50, 10), (50, 50), (50, 80)]
+            inside[10:81, 50] = True
+        else:
+            points = [(10, 30), (50, 30), (80, 30)]
+            inside[30, 10:81] = True
         # Act
-        result = obscure_polygon(frame, points, "pixelation", 10)
-
-        # Assert — frame non modificato
-        assert np.array_equal(result, original)
-        assert result is frame
-
-    def test_zero_height_polygon_returns_unchanged_frame(self):
-        # Arrange — poligono con punti y tutti uguali → h = 0
-        frame = np.ones((100, 100, 3), dtype=np.uint8) * 64
-        original = frame.copy()
-        # Tutti i punti sulla stessa riga y=30 → h=0
-        points = [(10, 30), (50, 30), (80, 30)]
-
-        # Act
-        result = obscure_polygon(frame, points, "blur", 11)
-
-        # Assert — frame non modificato
-        assert np.array_equal(result, original)
-        assert result is frame
-
-    def test_single_point_polygon_returns_unchanged(self):
-        # Arrange — un singolo punto → w=0, h=0
-        frame = np.ones((50, 50, 3), dtype=np.uint8) * 200
-        original = frame.copy()
-        points = [(25, 25)]
-
-        # Act
-        result = obscure_polygon(frame, points, "pixelation", 5)
-
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=10)
         # Assert
-        assert np.array_equal(result, original)
+        assert result is frame
+        assert np.any(result[inside] != original[inside])
+        np.testing.assert_array_equal(result[~inside], original[~inside])
 
-    def test_polygon_at_frame_edge_clamped_still_processed(self):
-        # Arrange — poligono valido anche se a bordo frame
-        frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        # Poligono nell'angolo in basso a destra
-        points = [(90, 90), (100, 90), (100, 100), (90, 100)]
-
+    def test_obscure_polygon_single_point_preserves_pixel_and_obscures_control(self) -> None:
+        # Arrange
+        frame = np.random.default_rng(0).integers(0, 256, (50, 50, 3), dtype=np.uint8)
+        original = frame.copy()
         # Act
-        result = obscure_polygon(frame, points, "pixelation", 5)
+        result = obscure_polygon(
+            frame=frame,
+            points=[(25, 25)],
+            method="pixelation",
+            intensity=5,
+        )
+        control = obscure_polygon(
+            frame=original.copy(),
+            points=[(20, 20), (29, 20), (29, 29), (20, 29)],
+            method="pixelation",
+            intensity=5,
+        )
+        # Assert
+        np.testing.assert_array_equal(result, original)
+        assert np.any(control[20:30, 20:30] != original[20:30, 20:30])
 
-        # Assert — il frame è stato modificato (o identico se area = 0 dopo clamp)
-        assert result is frame  # sempre stesso oggetto
+    @pytest.mark.parametrize("edge", ["right", "bottom", "corner"])
+    def test_obscure_polygon_frame_edge_obscures_last_pixels(self, edge: str) -> None:
+        # Arrange
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
+        original = frame.copy()
+        inside = np.zeros((100, 100), dtype=bool)
+        bounds = {
+            "right": (90, 40, 100, 59),
+            "bottom": (40, 90, 59, 100),
+            "corner": (90, 90, 100, 100),
+        }
+        x1, y1, x2, y2 = bounds[edge]
+        inside[y1 : min(y2 + 1, 100), x1 : min(x2 + 1, 100)] = True
+        points = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        # Act
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=5)
+        # Assert
+        assert result is frame
+        np.testing.assert_array_equal(result[~inside], original[~inside])
+        if edge in ("right", "corner"):
+            assert np.all(np.any(result[y1:y2, -1] != original[y1:y2, -1], axis=1))
+        if edge in ("bottom", "corner"):
+            assert np.all(np.any(result[-1, x1:x2] != original[-1, x1:x2], axis=1))
+
+    def test_obscure_polygon_pixelation_blocks_are_ten_pixels_uniform_and_distinct(self) -> None:
+        # Arrange
+        frame = np.random.default_rng(0).integers(0, 256, (40, 40, 3), dtype=np.uint8)
+        original = frame.copy()
+        points = [(10, 10), (29, 10), (29, 29), (10, 29)]
+        outside = np.ones((40, 40), dtype=bool)
+        outside[10:30, 10:30] = False
+        # Act
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=10)
+        # Assert
+        for y, x in [(10, 10), (10, 20), (20, 10), (20, 20)]:
+            assert np.all(result[y : y + 10, x : x + 10] == result[y, x])
+        assert np.any(result[10, 10] != result[10, 20])
+        assert np.any(result[10, 10] != result[20, 10])
+        assert np.any(result[20, 10] != result[20, 20])
+        assert np.any(result[10, 20] != result[20, 20])
+        np.testing.assert_array_equal(result[outside], original[outside])
 
 
 # ============================================================
@@ -166,3 +201,57 @@ class TestBoxToPolygonEdgeCases:
         # Assert — y2 clamped a 100
         ys = [p[1] for p in result]
         assert max(ys) <= frame_h
+
+
+@pytest.mark.parametrize(
+    ("box", "expected"),
+    [
+        ((40, 200, 200, 400), [(15, 190), (210, 190), (210, 410), (15, 410)]),
+        ((800, 200, 960, 400), [(790, 190), (985, 190), (985, 410), (790, 410)]),
+        ((200, 40, 400, 200), [(190, 15), (410, 15), (410, 210), (190, 210)]),
+        ((200, 800, 400, 960), [(190, 790), (410, 790), (410, 985), (190, 985)]),
+        ((200, 200, 400, 400), [(190, 190), (410, 190), (410, 410), (190, 410)]),
+    ],
+    ids=["left", "right", "top", "bottom", "center"],
+)
+def test_box_to_polygon_directional_padding_returns_exact_corners(
+    box: tuple[int, int, int, int],
+    expected: list[tuple[int, int]],
+) -> None:
+    # Arrange
+    config = PipelineConfig(edge_threshold=0.05, edge_padding_multiplier=2.5)
+    # Act
+    result = box_to_polygon(
+        x1=box[0],
+        y1=box[1],
+        x2=box[2],
+        y2=box[3],
+        padding=10,
+        frame_w=1000,
+        frame_h=1000,
+        config=config,
+    )
+    # Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("height", "base", "expected"),
+    [(160, 30, 60), (160, 10, 40), (8, 1, 3)],
+    ids=["scaled", "height_floor", "absolute_floor"],
+)
+def test_compute_adaptive_intensity_dominant_term_returns_exact_value(
+    height: int,
+    base: int,
+    expected: int,
+) -> None:
+    # Arrange
+    reference_height = 80
+    # Act
+    result = compute_adaptive_intensity(
+        box_height=height,
+        base_intensity=base,
+        reference_height=reference_height,
+    )
+    # Assert
+    assert result == expected

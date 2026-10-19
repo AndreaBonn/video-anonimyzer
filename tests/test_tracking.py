@@ -5,6 +5,8 @@ Non richiede cv2, ultralytics o modelli pesanti: TemporalSmoother
 usa solo numpy internamente.
 """
 
+import pytest
+
 from person_anonymizer.tracking import TemporalSmoother
 
 # ============================================================
@@ -65,6 +67,27 @@ class TestSmooth:
 
 class TestGetGhostBoxes:
     """Verifica la generazione e il ciclo di vita dei ghost box."""
+
+    @pytest.mark.parametrize("ghost_frames", [1, 3, 5])
+    def test_get_ghost_boxes_missing_track_lasts_exactly_configured_frames(self, ghost_frames):
+        # Arrange
+        smoother = TemporalSmoother(alpha=0.5, ghost_frames=ghost_frames, ghost_expansion=1.5)
+        smoother.smooth(track_id=7, x1=50, y1=50, x2=150, y2=150)
+
+        # Act: production order for every frame is clear_stale, then get_ghost_boxes.
+        smoother.clear_stale(active_ids={7})
+        visible_frame_ghosts = smoother.get_ghost_boxes()
+        missing_frame_ghosts = []
+        for _ in range(ghost_frames + 2):
+            smoother.clear_stale(active_ids=set())
+            missing_frame_ghosts.append(smoother.get_ghost_boxes())
+
+        # Assert: N consecutive ghosts, then permanent removal on the next frame.
+        assert visible_frame_ghosts == []
+        assert missing_frame_ghosts[:ghost_frames] == [[(7, 25, 25, 175, 175)]] * ghost_frames
+        assert missing_frame_ghosts[ghost_frames:] == [[], []]
+        assert 7 not in smoother.state
+        assert 7 not in smoother.ghost_countdown
 
     def test_no_ghosts_initially(self):
         # Arrange
