@@ -214,6 +214,26 @@ class TestStdoutCaptureSanitize:
         # Assert
         assert result == msg
 
+    @pytest.mark.parametrize(
+        ("msg", "expected"),
+        [
+            (
+                "Modello:        /home/u/proj/person_anonymizer/yolov8n.pt  |  Confidenza: 0.2",
+                "Modello:        yolov8n.pt  |  Confidenza: 0.2",
+            ),
+            ("Calibrazione da /etc/cams/cam1.npz caricata", "Calibrazione da cam1.npz caricata"),
+            ("Video: /home/u/uploads/abc/v.mp4", "Video: [FILE]"),
+        ],
+    )
+    def test_sanitize_keeps_only_the_file_name_of_other_absolute_paths(self, msg, expected):
+        # The docstring promises no absolute path reaches the browser, not only
+        # those under uploads/ and outputs/.
+        assert StdoutCapture._sanitize_message(msg) == expected
+
+    @pytest.mark.parametrize("msg", ["Frame 1/30 elaborato", "audio e/o video", "a / b"])
+    def test_sanitize_leaves_slashes_that_are_not_paths(self, msg):
+        assert StdoutCapture._sanitize_message(msg) == msg
+
     def test_uninstall_emits_residual_buffer(self, mock_sse):
         # Arrange — testo senza \n finale rimane nel buffer
         capture = StdoutCapture(sse=mock_sse, job_id="job1")

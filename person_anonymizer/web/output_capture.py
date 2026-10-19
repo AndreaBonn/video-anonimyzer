@@ -111,6 +111,9 @@ class StdoutCapture:
     """Cattura stdout e invia le righe come eventi SSE 'log'."""
 
     _PATH_RE = re.compile(r"/[^\s]*/(uploads|outputs)/[^\s]+")
+    # Any other absolute path (at least one directory): keep only the file name.
+    # The lookbehind skips fractions and words like "1/30" or "e/o".
+    _ABS_PATH_RE = re.compile(r"(?<![\w./])/(?:[^\s/]+/)+([^\s/]+)")
     _PHASE_RE = re.compile(r"\[FASE (\d)/5\]")
 
     def __init__(self, sse: SSEManager, job_id: str):
@@ -122,7 +125,7 @@ class StdoutCapture:
     @classmethod
     def _sanitize_message(cls, msg: str) -> str:
         """Rimuove path assoluti dai messaggi di log inviati al client."""
-        return cls._PATH_RE.sub("[FILE]", msg)
+        return cls._ABS_PATH_RE.sub(r"\1", cls._PATH_RE.sub("[FILE]", msg))
 
     def install(self):
         self._original = sys.stdout
