@@ -114,11 +114,6 @@ def run_refinement_loop(
             print(f"  Residui genuini rimasti in {len(genuine_alerts)} frame:")
             for fidx, boxes in genuine_alerts:
                 print(f"    Frame {fidx}: {len(boxes)} persona/e")
-            print(
-                "  -> Verranno mostrati nella revisione manuale."
-                if method == "manual"
-                else "  -> Rieseguire con --mode manual per correzione."
-            )
             break
 
         added_this_pass = 0

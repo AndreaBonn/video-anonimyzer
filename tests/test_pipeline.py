@@ -639,3 +639,73 @@ def test_stop_removes_intermediate_renders(tmp_path):
             run_pipeline(ctx)
 
     assert [t.exists() for t in temps] == [False, False]
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_hint", "other_hint"),
+    [
+        ("manual", "Verranno mostrati nella revisione manuale", "Rieseguire con --mode manual"),
+        ("auto", "Rieseguire con --mode manual", "Verranno mostrati nella revisione manuale"),
+    ],
+)
+def test_run_pipeline_residual_frames_hint_matches_operation_mode(
+    tmp_path, capsys, mode, expected_hint, other_hint
+):
+    # Residual frames left after the last refinement pass: in manual mode the
+    # reviewer is about to see them, in auto mode the user must rerun.
+    ctx = _make_ctx(tmp_path, mode=mode)
+    annotations = {i: {"auto": [], "manual": [], "intensities": []} for i in range(5)}
+    review_stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 5}
+    residual = PostCheckOutcome(status="residual", residual_frames=2)
+
+    with (
+        patch("person_anonymizer.pipeline.cv2.VideoCapture", return_value=_mock_cap(5)),
+        patch("person_anonymizer.pipeline.shutil.which", return_value=None),
+        patch("person_anonymizer.pipeline.load_detection_backend") as mock_backend,
+        patch("person_anonymizer.pipeline.run_detection_loop", return_value=(annotations, {}, {})),
+        patch(
+            "person_anonymizer.pipeline.run_refinement_loop",
+            return_value=(annotations, 3, 0, residual),
+        ),
+        patch(
+            "person_anonymizer.pipeline.run_manual_review_stage",
+            return_value=(annotations, review_stats),
+        ),
+        patch("person_anonymizer.pipeline.render_video"),
+        patch("person_anonymizer.pipeline.save_outputs"),
+    ):
+        mock_backend.return_value = MagicMock(sam3_refiner=None, sam3_video_detector=None)
+        from person_anonymizer.pipeline import run_pipeline
+
+        run_pipeline(ctx)
+
+    out = capsys.readouterr().out
+    assert expected_hint in out
+    assert other_hint not in out
+
+
+def test_run_pipeline_clean_post_check_prints_no_residual_hint(tmp_path, capsys):
+    ctx = _make_ctx(tmp_path, mode="auto")
+    annotations = {i: {"auto": [], "manual": [], "intensities": []} for i in range(5)}
+
+    with (
+        patch("person_anonymizer.pipeline.cv2.VideoCapture", return_value=_mock_cap(5)),
+        patch("person_anonymizer.pipeline.shutil.which", return_value=None),
+        patch("person_anonymizer.pipeline.load_detection_backend") as mock_backend,
+        patch("person_anonymizer.pipeline.run_detection_loop", return_value=(annotations, {}, {})),
+        patch(
+            "person_anonymizer.pipeline.run_refinement_loop",
+            return_value=(annotations, 1, 0, PostCheckOutcome(status="clean")),
+        ),
+        patch("person_anonymizer.pipeline.render_video"),
+        patch("person_anonymizer.pipeline.save_outputs"),
+    ):
+        mock_backend.return_value = MagicMock(sam3_refiner=None, sam3_video_detector=None)
+        from person_anonymizer.pipeline import run_pipeline
+
+        run_pipeline(ctx)
+
+    out = capsys.readouterr().out
+    assert "[FASE 4/5] Rendering finale" in out
+    assert "Rieseguire con --mode manual" not in out
+    assert "Verranno mostrati" not in out

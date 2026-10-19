@@ -279,6 +279,13 @@ def run_pipeline(ctx: PipelineContext, config=None) -> PostCheckOutcome:
         actual_refinement_passes, refinement_annotations_added = 0, 0
         post_check = PostCheckOutcome(status="skipped")
 
+    if post_check.status == "residual":
+        print(
+            "  -> Verranno mostrati nella revisione manuale."
+            if mode == "manual"
+            else "  -> Rieseguire con --mode manual per correzione."
+        )
+
     _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
 
     # ============================================
