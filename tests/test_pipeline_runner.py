@@ -6,11 +6,19 @@ config invalida, yolo path traversal, stop_event), _build_config.
 """
 
 import threading
+from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from person_anonymizer.config import PipelineConfig
+from person_anonymizer.models import (
+    PipelineContext,
+    PipelineError,
+    PipelineStoppedError,
+    PostCheckOutcome,
+)
 from person_anonymizer.web.pipeline_runner import PipelineRunner, _build_config
 
 # ---------------------------------------------------------------------------
@@ -439,3 +447,167 @@ class TestPipelineRunnerRun:
         # Assert — nel finally, stop_event.is_set() → emette "stopped"
         events = [c[0][1] for c in mock_sse.emit.call_args_list]
         assert "stopped" in events
+
+
+@pytest.fixture
+def pipeline_boundary() -> Iterator[MagicMock]:
+    with (
+        patch("person_anonymizer.pipeline.run_pipeline") as pipeline,
+        patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
+        patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
+    ):
+        pipeline.return_value = PostCheckOutcome(status="clean")
+        yield pipeline
+
+
+def _run_characterized_job(*, runner: PipelineRunner, mode: str = "auto") -> None:
+    runner._current_job_id = "characterization"
+    runner._run(
+        job_id="characterization",
+        video_path="/input/video.mp4",
+        config_dict={**MINIMAL_CONFIG, "operation_mode": mode},
+        review_json=None,
+    )
+
+
+def test_run_success_emits_sorted_outputs_sizes_then_close(
+    runner: PipelineRunner,
+    mock_sse: MagicMock,
+    pipeline_boundary: MagicMock,
+) -> None:
+    # Arrange
+    def write_outputs(ctx: PipelineContext, *, config: PipelineConfig) -> PostCheckOutcome:
+        job_dir = Path(ctx.output).parent
+        (job_dir / "z_video.mp4").write_bytes(data=b"x" * 1_048_576)
+        (job_dir / "a_report.csv").write_bytes(data=b"x" * 16_384)
+        (job_dir / "nested").mkdir()
+        return PostCheckOutcome(status="residual", residual_frames=2)
+
+    pipeline_boundary.side_effect = write_outputs
+
+    # Act
+    _run_characterized_job(runner=runner)
+
+    # Assert
+    assert mock_sse.mock_calls == [
+        call.emit("characterization", "started", {"job_id": "characterization"}),
+        call.emit(
+            "characterization",
+            "completed",
+            {
+                "job_id": "characterization",
+                "outputs": [
+                    {"name": "a_report.csv", "size_mb": 0.02},
+                    {"name": "z_video.mp4", "size_mb": 1.0},
+                ],
+                "post_check": {"status": "residual", "residual_frames": 2},
+            },
+        ),
+        call.close("characterization"),
+    ]
+    assert runner._current_job_id is None
+
+
+def test_run_error_types_exposes_pipeline_error_and_redacts_generic_secret(
+    runner: PipelineRunner,
+    mock_sse: MagicMock,
+    pipeline_boundary: MagicMock,
+) -> None:
+    # Arrange
+    outcomes = [
+        (PipelineError("segreto"), "segreto"),
+        (RuntimeError("segreto"), "Errore durante l'elaborazione della pipeline"),
+    ]
+    messages = []
+
+    for error, expected_message in outcomes:
+        pipeline_boundary.side_effect = error
+        mock_sse.reset_mock()
+
+        # Act
+        _run_characterized_job(runner=runner)
+
+        # Assert
+        assert mock_sse.mock_calls == [
+            call.emit("characterization", "started", {"job_id": "characterization"}),
+            call.emit(
+                "characterization",
+                "error",
+                {
+                    "job_id": "characterization",
+                    "message": expected_message,
+                },
+            ),
+            call.close("characterization"),
+        ]
+        messages.append(mock_sse.emit.call_args.args[2]["message"])
+        assert runner._current_job_id is None
+
+    assert "segreto" in messages[0]
+    assert "segreto" not in messages[1]
+
+
+def test_run_requested_stop_emits_single_stopped_then_close(
+    runner: PipelineRunner,
+    mock_sse: MagicMock,
+    pipeline_boundary: MagicMock,
+) -> None:
+    # Arrange
+    def stop_pipeline(ctx: PipelineContext, *, config: PipelineConfig) -> None:
+        ctx.stop_event.set()
+        raise PipelineStoppedError("requested stop")
+
+    pipeline_boundary.side_effect = stop_pipeline
+
+    # Act
+    _run_characterized_job(runner=runner)
+
+    # Assert
+    assert mock_sse.mock_calls == [
+        call.emit("characterization", "started", {"job_id": "characterization"}),
+        call.emit(
+            "characterization",
+            "stopped",
+            {
+                "job_id": "characterization",
+                "message": "Pipeline interrotta dall'utente",
+            },
+        ),
+        call.close("characterization"),
+    ]
+    assert runner._current_job_id is None
+
+
+def test_run_manual_and_auto_modes_assign_review_context_only_in_manual(
+    runner: PipelineRunner,
+    mock_sse: MagicMock,
+    pipeline_boundary: MagicMock,
+) -> None:
+    # Arrange
+    contexts = []
+    pipeline_boundary.side_effect = lambda ctx, **kwargs: (
+        contexts.append(ctx) or PostCheckOutcome(status="clean")
+    )
+
+    # Act
+    _run_characterized_job(runner=runner, mode="manual")
+    _run_characterized_job(runner=runner, mode="auto")
+
+    # Assert
+    manual, auto = contexts
+    assert manual.mode == "manual"
+    assert manual.review_state is runner.review_state
+    assert manual.sse_manager is mock_sse
+    assert manual.job_id == "characterization"
+    assert manual.stop_event is runner._stop_event
+    assert auto.mode == "auto"
+    assert auto.review_state is None
+    assert auto.sse_manager is None
+    assert auto.job_id is None
+    assert auto.stop_event is runner._stop_event
+    assert [entry.args[1] for entry in mock_sse.emit.call_args_list] == [
+        "started",
+        "completed",
+        "started",
+        "completed",
+    ]
