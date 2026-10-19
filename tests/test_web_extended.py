@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import person_anonymizer.web.app as web_app
 from person_anonymizer.web.app import app
 from person_anonymizer.web.extensions import limiter
 
@@ -26,15 +27,21 @@ from person_anonymizer.web.extensions import limiter
 
 
 @pytest.fixture
-def client():
-    """Flask test client con TESTING abilitato e rate limiting disabilitato."""
-    app.config["TESTING"] = True
-    app.config["RATELIMIT_ENABLED"] = False
-    app.config["RATELIMIT_STORAGE_URI"] = "memory://"
-    limiter.enabled = False
+def client(tmp_path, monkeypatch):
+    """Provide a client with isolated storage and disabled rate limiting."""
+    upload_dir = tmp_path / "uploads"
+    output_dir = tmp_path / "outputs"
+    upload_dir.mkdir()
+    output_dir.mkdir()
+    monkeypatch.setattr(web_app, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(web_app, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(app, "output_dir", output_dir)
+    monkeypatch.setattr(web_app.pipeline_runner, "_output_dir", output_dir)
+    monkeypatch.setitem(app.config, "TESTING", True)
+    monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", False)
+    monkeypatch.setattr(limiter, "enabled", False)
     with app.test_client() as c:
         yield c
-    limiter.enabled = True
 
 
 # ---------------------------------------------------------------------------

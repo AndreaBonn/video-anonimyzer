@@ -7,20 +7,30 @@ Nessuna dipendenza da cv2, ultralytics o YOLO.
 """
 
 import io
+from unittest.mock import Mock
 
 import pytest
+
+import person_anonymizer.web.app as web_app
 
 # conftest aggiunge person_anonymizer/ al path
 from person_anonymizer.web.app import app
 
 
 @pytest.fixture
-def client():
-    """Flask test client con TESTING abilitato e rate limiting disabilitato."""
-    app.config["TESTING"] = True
-    # Flask-Limiter 3.x: disabilita il rate limiting durante i test
-    app.config["RATELIMIT_ENABLED"] = False
-    app.config["RATELIMIT_STORAGE_URI"] = "memory://"
+def client(tmp_path, monkeypatch):
+    """Provide a client with isolated storage and disabled rate limiting."""
+    upload_dir = tmp_path / "uploads"
+    output_dir = tmp_path / "outputs"
+    upload_dir.mkdir()
+    output_dir.mkdir()
+    monkeypatch.setattr(web_app, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(web_app, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(app, "output_dir", output_dir)
+    monkeypatch.setattr(web_app.pipeline_runner, "_output_dir", output_dir)
+    monkeypatch.setitem(app.config, "TESTING", True)
+    monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", False)
+    monkeypatch.setattr(web_app.limiter, "enabled", False)
     with app.test_client() as c:
         yield c
 
@@ -368,27 +378,32 @@ class TestStartPipelineSecurity:
         assert "error" in data
         assert "video_filename" in data["error"].lower()
 
-    def test_start_review_json_traversal_blocked(self, client):
-        # Arrange — review_json_filename con path traversal
-        # secure_filename elimina i ../ quindi il file non verrà trovato.
-        # In alcuni ambienti di test il rate limiter in-memory può restituire
-        # 429 se le richieste precedenti hanno esaurito il limite: anche in
-        # quel caso la traversal è "bloccata" (non ci arriva al filesystem).
+    def test_start_review_json_traversal_blocked(self, client, monkeypatch):
+        job_dir = web_app.UPLOAD_DIR / "aabbccddeeff"
+        job_dir.mkdir()
+        (job_dir / "video.mp4").write_bytes(b"\x00\x00\x00\x18ftypisom")
+        annotation_path = job_dir / "ann.json"
+        annotation_path.write_text("{}", encoding="utf-8")
+        start = Mock(return_value=(True, ""))
+        monkeypatch.setattr(web_app.pipeline_runner, "start", start)
         payload = {
             "job_id": "aabbccddeeff",
             "video_filename": "video.mp4",
             "review_json_filename": "../../../etc/passwd",
         }
 
-        # Act
         resp = client.post("/api/start", json=payload)
+        assert resp.status_code == 404
+        assert resp.get_json() == {"error": "File JSON non trovato"}
+        start.assert_not_called()
 
-        # Assert — mai 200: secure_filename sanifica oppure rate limit blocca.
-        # 429 può non avere corpo JSON (flask-limiter risponde in testo),
-        # quindi verifichiamo solo lo status code.
-        assert resp.status_code in (400, 404, 429)
-        if resp.status_code != 429:
-            assert "error" in resp.get_json()
+        payload["review_json_filename"] = "ann.json"
+        resp = client.post("/api/start", json=payload)
+        assert resp.status_code == 200
+        assert resp.get_json() == {"status": "started", "job_id": payload["job_id"]}
+        start.assert_called_once_with(
+            payload["job_id"], str(job_dir / "video.mp4"), {}, str(annotation_path)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -415,18 +430,17 @@ class TestErrorHandlers:
 class TestUploadSecurity:
     """Verifica che upload non esponga path assoluti nella response."""
 
-    def test_upload_response_no_absolute_path(self, client):
-        # Arrange — file mp4 fittizio ma con estensione valida
-        data = {"video": (io.BytesIO(b"fake video content"), "test.mp4")}
-
-        # Act
+    def test_upload_response_no_absolute_path(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr(web_app, "read_video_info", lambda path: {})
+        content = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
+        data = {"video": (io.BytesIO(content), "test.mp4")}
         resp = client.post("/api/upload", data=data, content_type="multipart/form-data")
-
-        # Assert — se la validazione passa (200), la response non deve contenere "path"
-        if resp.status_code == 200:
-            body = resp.get_json()
-            assert "path" not in body
-            assert "filename" in body
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["filename"] == "test.mp4"
+        assert "path" not in body
+        assert str(tmp_path) not in resp.get_data(as_text=True)
+        assert (web_app.UPLOAD_DIR / body["job_id"] / body["filename"]).read_bytes() == content
 
 
 # ---------------------------------------------------------------------------
