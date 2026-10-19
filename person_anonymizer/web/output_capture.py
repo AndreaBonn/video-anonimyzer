@@ -1,5 +1,6 @@
 """Cattura stdout e tqdm per inoltro via SSE."""
 
+import importlib
 import re
 import sys
 import time
@@ -7,6 +8,19 @@ import time
 from person_anonymizer.web.sse_manager import SSEManager
 
 __all__ = ["TqdmCapture", "StdoutCapture"]
+
+
+# Pipeline modules that bind tqdm at import time ("from tqdm import tqdm")
+_TQDM_MODULE_NAMES = (
+    "person_anonymizer.pipeline_stages",
+    "person_anonymizer.stage_detection",
+    "person_anonymizer.rendering",
+    "person_anonymizer.postprocessing",
+)
+
+
+def _tqdm_modules():
+    return [importlib.import_module(name) for name in _TQDM_MODULE_NAMES]
 
 
 class TqdmCapture:
@@ -18,10 +32,8 @@ class TqdmCapture:
         self._original_tqdm = None
 
     def install(self):
-        """Installa il patch su tqdm (nel modulo tqdm e in pipeline_stages)."""
+        """Installa il patch su tqdm (nel modulo tqdm e nei moduli che lo importano)."""
         import tqdm as tqdm_module
-
-        import person_anonymizer.pipeline_stages as pa_stages
 
         self._original_tqdm = tqdm_module.tqdm
 
@@ -80,19 +92,19 @@ class TqdmCapture:
                 )
                 super().close()
 
-        # Patcha sia il modulo tqdm che il riferimento in pipeline_stages
+        # "from tqdm import tqdm" copia il riferimento all'import: va sostituito in ogni modulo
         tqdm_module.tqdm = PatchedTqdm
-        pa_stages.tqdm = PatchedTqdm
+        for module in _tqdm_modules():
+            module.tqdm = PatchedTqdm
 
     def uninstall(self):
         """Ripristina tqdm originale."""
         if self._original_tqdm:
             import tqdm as tqdm_module
 
-            import person_anonymizer.pipeline_stages as pa_stages
-
             tqdm_module.tqdm = self._original_tqdm
-            pa_stages.tqdm = self._original_tqdm
+            for module in _tqdm_modules():
+                module.tqdm = self._original_tqdm
 
 
 class StdoutCapture:

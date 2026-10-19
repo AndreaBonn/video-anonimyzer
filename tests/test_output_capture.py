@@ -5,6 +5,7 @@ Copre: install/uninstall, write/flush, context manager, sanitizzazione path,
 phase_label detection, buffer residuo, rate-limit tqdm.
 """
 
+import io
 import sys
 from unittest.mock import MagicMock
 
@@ -407,3 +408,47 @@ class TestPatchedTqdmBehavior:
         assert len(progress_calls) >= 1
 
         capture.uninstall()
+
+
+# ---------------------------------------------------------------------------
+# TqdmCapture: progress bars created inside the pipeline stage modules
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "person_anonymizer.stage_detection",
+        "person_anonymizer.rendering",
+        "person_anonymizer.postprocessing",
+    ],
+)
+def test_tqdm_capture_emits_progress_from_stage_modules(module_name):
+    import importlib
+
+    module = importlib.import_module(module_name)
+    sse = MagicMock()
+    capture = TqdmCapture(sse, "aabbccddeeff")
+    capture.install()
+    try:
+        bar = module.tqdm(total=3, desc="Rendering", file=io.StringIO())
+        bar.update(3)
+        bar.close()
+    finally:
+        capture.uninstall()
+
+    events = [c[0][1] for c in sse.emit.call_args_list]
+    assert "progress" in events
+
+
+def test_tqdm_capture_uninstall_restores_stage_modules():
+    import person_anonymizer.rendering as rendering
+
+    original = rendering.tqdm
+    capture = TqdmCapture(MagicMock(), "aabbccddeeff")
+    capture.install()
+    patched = rendering.tqdm
+    capture.uninstall()
+
+    assert patched is not original
+    assert rendering.tqdm is original
