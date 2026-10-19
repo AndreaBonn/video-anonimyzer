@@ -11,7 +11,24 @@ from .anonymization import resolve_intensity
 from .config import VERSION
 from .models import OutputPaths, PipelineContext, PipelineInputError, PipelineResult, VideoMeta
 
-__all__ = ["save_outputs", "load_annotations_from_json"]
+__all__ = [
+    "save_outputs",
+    "load_annotations_from_json",
+    "build_annotations_payload",
+    "report_rows",
+]
+
+REPORT_FIELDS = [
+    "frame_number",
+    "persons_detected",
+    "avg_confidence",
+    "min_confidence",
+    "max_confidence",
+    "motion_zones",
+    "sliding_window_hits",
+    "multiscale_hits",
+    "post_check_alerts",
+]
 
 
 def load_annotations_from_json(review_json, config):
@@ -70,6 +87,139 @@ def load_annotations_from_json(review_json, config):
     return annotations, "manual"
 
 
+def report_rows(report_data: dict) -> list[dict]:
+    """Return the CSV report rows ordered by frame index.
+
+    Parameters
+    ----------
+    report_data : dict
+        Per-frame report entries keyed by frame index.
+
+    Returns
+    -------
+    list[dict]
+        One row per frame, sorted by ascending frame index.
+    """
+    return [report_data[fidx] for fidx in sorted(report_data)]
+
+
+def _frame_payload(ann: dict) -> dict:
+    """Serialize one frame's annotations; ``intensities`` only when non-empty."""
+    frame_data = {
+        "auto": [[list(pt) for pt in poly] for poly in ann.get("auto", [])],
+        "manual": [[list(pt) for pt in poly] for poly in ann.get("manual", [])],
+    }
+    if ann.get("intensities"):
+        frame_data["intensities"] = ann["intensities"]
+    return frame_data
+
+
+def _pipeline_config_payload(config, method: str) -> dict:
+    """Serialize the config values recorded in the annotations JSON."""
+    return {
+        "yolo_model": config.yolo_model,
+        "detection_confidence": config.detection_confidence,
+        "nms_iou_threshold": config.nms_iou_threshold,
+        "nms_iou_internal": config.nms_iou_internal,
+        "inference_scales": config.inference_scales,
+        "sliding_window_grid": config.sliding_window_grid,
+        "padding": config.person_padding,
+        "anonymization_method": method,
+        "base_intensity": config.anonymization_intensity,
+        "adaptive_reference_height": config.adaptive_reference_height,
+        "smoothing_alpha": config.smoothing_alpha,
+        "ghost_frames": config.ghost_frames,
+    }
+
+
+def build_annotations_payload(
+    *, config, result: PipelineResult, input_path, meta: VideoMeta
+) -> dict:
+    """Build the annotations JSON document (schema 2.0) as a plain dict.
+
+    Parameters
+    ----------
+    config : PipelineConfig
+        Pipeline configuration.
+    result : PipelineResult
+        Pipeline results (annotations, mode, refinement and review stats).
+    input_path : str
+        Path of the source video (only the file name is stored).
+    meta : VideoMeta
+        Source video metadata.
+
+    Returns
+    -------
+    dict
+        JSON-serializable payload; ``generated`` is the current local time.
+    """
+    return {
+        "schema_version": "2.0",
+        "tool_version": VERSION,
+        "video": {
+            "filename": Path(input_path).name,
+            "total_frames": meta.total_frames,
+            "fps": meta.fps,
+            "resolution": [meta.frame_w, meta.frame_h],
+        },
+        "pipeline_config": _pipeline_config_payload(config, result.method),
+        "refinement": {
+            "max_passes": config.max_refinement_passes,
+            "actual_passes": result.actual_refinement_passes,
+            "annotations_added": result.refinement_annotations_added,
+            "overlap_threshold": config.refinement_overlap_threshold,
+        },
+        "mode": result.mode,
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "review_stats": result.review_stats,
+        "frames": {str(fidx): _frame_payload(ann) for fidx, ann in result.annotations.items()},
+    }
+
+
+def _has_debug_video(result: PipelineResult, paths: OutputPaths) -> bool:
+    """True when debug output is enabled and the temp debug video exists."""
+    return result.enable_debug and os.path.exists(paths.temp_debug)
+
+
+def _write_final_videos(result: PipelineResult, input_path, paths: OutputPaths) -> None:
+    """Encode (ffmpeg available) or copy the final video and, if enabled, the debug one."""
+    # Imported here so tests can patch the functions on the postprocessing module.
+    from .postprocessing import encode_with_audio, encode_without_audio
+
+    if result.ffmpeg_available:
+        encode_with_audio(paths.temp_video, input_path, paths.output)
+        if _has_debug_video(result, paths):
+            encode_without_audio(paths.temp_debug, paths.debug)
+    else:
+        shutil.copy(paths.temp_video, paths.output)
+        if _has_debug_video(result, paths):
+            shutil.copy(paths.temp_debug, paths.debug)
+
+
+def _write_report_csv(report_data: dict, report_path) -> None:
+    """Write the per-frame CSV report."""
+    with open(report_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=REPORT_FIELDS)
+        writer.writeheader()
+        writer.writerows(report_rows(report_data))
+
+
+def _write_annotations_json(payload: dict, json_path) -> None:
+    """Write the annotations payload as indented JSON."""
+    with open(json_path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+def _remove_temp_files(paths: OutputPaths) -> None:
+    """Remove temporary videos; a failure is reported and never raised."""
+    for tmp in (paths.temp_video, paths.temp_debug):
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError as e:
+            print(f"  ATTENZIONE: impossibile rimuovere {tmp}: {e}")
+
+
 def save_outputs(
     ctx: PipelineContext,
     result: PipelineResult,
@@ -95,88 +245,16 @@ def save_outputs(
     meta : VideoMeta
         Metadati del video.
     """
-    from .postprocessing import encode_with_audio, encode_without_audio
-
     try:
-        if result.ffmpeg_available:
-            encode_with_audio(paths.temp_video, input_path, paths.output)
-            if result.enable_debug and os.path.exists(paths.temp_debug):
-                encode_without_audio(paths.temp_debug, paths.debug)
-        else:
-            shutil.copy(paths.temp_video, paths.output)
-            if result.enable_debug and os.path.exists(paths.temp_debug):
-                shutil.copy(paths.temp_debug, paths.debug)
+        _write_final_videos(result, input_path, paths)
 
         if result.enable_report:
-            with open(paths.report, "w", newline="") as f:
-                writer = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "frame_number",
-                        "persons_detected",
-                        "avg_confidence",
-                        "min_confidence",
-                        "max_confidence",
-                        "motion_zones",
-                        "sliding_window_hits",
-                        "multiscale_hits",
-                        "post_check_alerts",
-                    ],
-                )
-                writer.writeheader()
-                for fidx in sorted(result.report_data.keys()):
-                    writer.writerow(result.report_data[fidx])
+            _write_report_csv(result.report_data, paths.report)
 
         if result.mode == "manual" or ctx.normalize:
-            json_annotations = {
-                "schema_version": "2.0",
-                "tool_version": VERSION,
-                "video": {
-                    "filename": Path(input_path).name,
-                    "total_frames": meta.total_frames,
-                    "fps": meta.fps,
-                    "resolution": [meta.frame_w, meta.frame_h],
-                },
-                "pipeline_config": {
-                    "yolo_model": config.yolo_model,
-                    "detection_confidence": config.detection_confidence,
-                    "nms_iou_threshold": config.nms_iou_threshold,
-                    "nms_iou_internal": config.nms_iou_internal,
-                    "inference_scales": config.inference_scales,
-                    "sliding_window_grid": config.sliding_window_grid,
-                    "padding": config.person_padding,
-                    "anonymization_method": result.method,
-                    "base_intensity": config.anonymization_intensity,
-                    "adaptive_reference_height": config.adaptive_reference_height,
-                    "smoothing_alpha": config.smoothing_alpha,
-                    "ghost_frames": config.ghost_frames,
-                },
-                "refinement": {
-                    "max_passes": config.max_refinement_passes,
-                    "actual_passes": result.actual_refinement_passes,
-                    "annotations_added": result.refinement_annotations_added,
-                    "overlap_threshold": config.refinement_overlap_threshold,
-                },
-                "mode": result.mode,
-                "generated": datetime.now().isoformat(timespec="seconds"),
-                "review_stats": result.review_stats,
-                "frames": {},
-            }
-            for fidx, ann in result.annotations.items():
-                frame_data = {
-                    "auto": [[list(pt) for pt in poly] for poly in ann.get("auto", [])],
-                    "manual": [[list(pt) for pt in poly] for poly in ann.get("manual", [])],
-                }
-                if ann.get("intensities"):
-                    frame_data["intensities"] = ann["intensities"]
-                json_annotations["frames"][str(fidx)] = frame_data
-            with open(paths.json, "w") as f:
-                json.dump(json_annotations, f, indent=2)
-
+            payload = build_annotations_payload(
+                config=config, result=result, input_path=input_path, meta=meta
+            )
+            _write_annotations_json(payload, paths.json)
     finally:
-        for tmp in (paths.temp_video, paths.temp_debug):
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except OSError as e:
-                print(f"  ATTENZIONE: impossibile rimuovere {tmp}: {e}")
+        _remove_temp_files(paths)
