@@ -13,7 +13,7 @@ import pytest
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import FisheyeContext, FrameProcessors
-from person_anonymizer.stage_detection import run_detection_loop
+from person_anonymizer.stage_detection import _DetectionSetup, run_detection_loop
 
 
 def _make_config(**kwargs):
@@ -232,6 +232,11 @@ class TestProcessSingleFrame:
         proc.sam3_refiner = None
         return proc
 
+    def _make_setup(self, config, proc):
+        return _DetectionSetup(
+            model=MagicMock(), config=config, frame_w=640, frame_h=480, fps=25.0, proc=proc
+        )
+
     def test_returns_frame_detection_result(self):
         # Arrange
         config = _make_config(enable_tracking=False)
@@ -245,7 +250,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            result = _process_single_frame(frame, None, self._make_setup(config, proc))
 
         # Assert — risultato con 0 poligoni (nessuna detection)
         assert result.polygons == []
@@ -265,7 +270,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            result = _process_single_frame(frame, None, self._make_setup(config, proc))
 
         assert result.polygons == []
         assert result.intensities == []
@@ -291,7 +296,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            result = _process_single_frame(frame, None, self._make_setup(config, proc))
 
         assert len(result.polygons) == 1
 
@@ -314,7 +319,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            result = _process_single_frame(frame, None, self._make_setup(config, proc))
 
         proc.sam3_refiner.refine_boxes.assert_called_once()
         assert len(result.polygons) == 1
@@ -340,7 +345,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            _process_single_frame(frame, None, self._make_setup(config, proc))
 
         smoother.clear_stale.assert_called_once()
 
@@ -365,7 +370,7 @@ class TestProcessSingleFrame:
         ):
             from person_anonymizer.stage_detection import _process_single_frame
 
-            result = _process_single_frame(frame, MagicMock(), config, 640, 480, proc, None, 25.0)
+            result = _process_single_frame(frame, None, self._make_setup(config, proc))
 
         # 1 ghost box → 1 polygon
         assert len(result.polygons) == 1
