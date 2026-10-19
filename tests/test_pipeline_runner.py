@@ -319,20 +319,10 @@ class TestPipelineRunnerRun:
             patch("person_anonymizer.pipeline.run_pipeline"),
             patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
             patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
-            patch("person_anonymizer.web.pipeline_runner.Path") as mock_path_cls,
         ):
             from person_anonymizer.config import PipelineConfig
 
             mock_cfg.return_value = PipelineConfig(operation_mode="auto")
-
-            # Evita che Path(__file__) fallisca
-            mock_path_instance = MagicMock()
-            mock_path_instance.resolve.return_value = mock_path_instance
-            mock_path_instance.parent = mock_path_instance
-            mock_path_instance.__truediv__ = lambda s, o: mock_path_instance
-            mock_path_instance.exists.return_value = False
-            mock_path_instance.__str__ = lambda s: "/fake/pa_dir"
-            mock_path_cls.return_value = mock_path_instance
 
             # Act
             self._run_sync(runner, "aabbccddeeff", "/fake/video.mp4", MINIMAL_CONFIG)
@@ -391,26 +381,7 @@ class TestPipelineRunnerRun:
             cfg = PipelineConfig(operation_mode="auto")
             mock_cfg.return_value = cfg
 
-            import person_anonymizer as pa
-
-            pa_dir = Path(pa.__file__).resolve().parent
-            with patch("person_anonymizer.web.pipeline_runner.Path") as mock_path_cls:
-                mock_path_instance = MagicMock()
-                mock_path_instance.resolve.return_value = mock_path_instance
-                mock_path_instance.parent = MagicMock(
-                    __truediv__=lambda s, o: mock_path_instance,
-                    resolve=lambda: mock_path_instance,
-                    __str__=lambda s: str(pa_dir),
-                )
-                mock_path_instance.__truediv__ = lambda s, o: mock_path_instance
-                mock_path_instance.exists.return_value = False
-                mock_path_instance.stem = "video"
-                mock_path_instance.__str__ = lambda s: str(pa_dir)
-                mock_path_instance.mkdir = MagicMock()
-                mock_path_instance.iterdir = MagicMock(return_value=[])
-                mock_path_cls.return_value = mock_path_instance
-
-                self._run_sync(runner, "aabbccddeeff", "/fake/video.mp4", MINIMAL_CONFIG)
+            self._run_sync(runner, "aabbccddeeff", "/fake/video.mp4", MINIMAL_CONFIG)
 
         # Assert
         events = [c[0][1] for c in mock_sse.emit.call_args_list]
@@ -425,21 +396,10 @@ class TestPipelineRunnerRun:
             patch("person_anonymizer.pipeline.run_pipeline"),
             patch("person_anonymizer.web.pipeline_runner.TqdmCapture"),
             patch("person_anonymizer.web.pipeline_runner.StdoutCapture"),
-            patch("person_anonymizer.web.pipeline_runner.Path") as mock_path_cls,
         ):
             from person_anonymizer.config import PipelineConfig
 
             mock_cfg.return_value = PipelineConfig(operation_mode="auto")
-            mock_path_instance = MagicMock()
-            mock_path_instance.resolve.return_value = mock_path_instance
-            mock_path_instance.parent = mock_path_instance
-            mock_path_instance.__truediv__ = lambda s, o: mock_path_instance
-            mock_path_instance.exists.return_value = False
-            mock_path_instance.__str__ = lambda s: "/fake/pa_dir"
-            mock_path_instance.mkdir = MagicMock()
-            mock_path_instance.iterdir = MagicMock(return_value=[])
-            mock_path_instance.stem = "video"
-            mock_path_cls.return_value = mock_path_instance
 
             # Act
             self._run_sync(runner, "aabbccddeeff", "/fake/video.mp4", MINIMAL_CONFIG)

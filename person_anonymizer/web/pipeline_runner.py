@@ -6,6 +6,7 @@ Crea PipelineConfig dai parametri web, cattura stdout/tqdm, invia eventi SSE.
 import threading
 from dataclasses import asdict
 from pathlib import Path
+from typing import NamedTuple
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import PipelineContext, PipelineError, PipelineStoppedError
@@ -20,6 +21,64 @@ from person_anonymizer.web.review_state import ReviewState
 from person_anonymizer.web.sse_manager import SSEManager
 
 __all__ = ["PipelineRunner", "validate_config_params"]
+
+BYTES_PER_MB = 1024 * 1024
+SIZE_MB_DECIMALS = 2
+
+
+class _JobRequest(NamedTuple):
+    """Inputs of one pipeline job, as received from the web layer."""
+
+    job_id: str
+    video_path: str
+    config_dict: dict
+    review_json: str | None
+
+
+def resolve_yolo_model(model_name: str, package_dir: Path) -> str | None:
+    """Resolve a YOLO model name against the package directory.
+
+    Parameters
+    ----------
+    model_name : str
+        Model file name or relative path, as set in the config.
+    package_dir : Path
+        Directory the model must stay inside.
+
+    Returns
+    -------
+    str | None
+        None if the resolved path escapes ``package_dir``; the absolute path if
+        the file exists there; otherwise ``model_name`` unchanged, so that
+        ultralytics can download it.
+    """
+    candidate = (package_dir / model_name).resolve()
+    if not candidate.is_relative_to(package_dir.resolve()):
+        return None
+    return str(candidate) if candidate.exists() else model_name
+
+
+def list_job_outputs(job_dir: Path) -> list[dict]:
+    """List the regular files of a job directory, sorted by name.
+
+    Parameters
+    ----------
+    job_dir : Path
+        Output directory of the job; subdirectories are ignored.
+
+    Returns
+    -------
+    list[dict]
+        One ``{"name", "size_mb"}`` entry per file, size rounded to 2 decimals.
+    """
+    return [
+        {
+            "name": f.name,
+            "size_mb": round(f.stat().st_size / BYTES_PER_MB, SIZE_MB_DECIMALS),
+        }
+        for f in sorted(job_dir.iterdir())
+        if f.is_file()
+    ]
 
 
 def _build_config(web_config: dict) -> PipelineConfig:
@@ -105,81 +164,74 @@ class PipelineRunner:
                 "job_id": self._current_job_id if running else None,
             }
 
+    def _emit_error(self, job_id: str, message: str) -> None:
+        self._sse.emit(job_id, "error", {"job_id": job_id, "message": message})
+
+    def _fail(self, job_id: str, message: str) -> None:
+        """Abort a job that failed before the pipeline started."""
+        self._emit_error(job_id, message)
+        self._sse.close(job_id)
+        with self._lock:
+            self._current_job_id = None
+
+    def _build_context(
+        self, job: _JobRequest, config: PipelineConfig, output_path: str
+    ) -> PipelineContext:
+        """Build the pipeline context; manual mode also gets the review state and SSE."""
+        ctx = PipelineContext(
+            input=job.video_path,
+            mode=config.operation_mode,
+            method=job.config_dict.get("anonymization_method"),
+            output=output_path,
+            no_debug=not job.config_dict.get("enable_debug_video", True),
+            no_report=not job.config_dict.get("enable_confidence_report", True),
+            review=job.review_json,
+            normalize=job.config_dict.get("normalize", False),
+            stop_event=self._stop_event,
+        )
+        if config.operation_mode == "manual":
+            ctx.review_state = self.review_state
+            ctx.sse_manager = self._sse
+            ctx.job_id = job.job_id
+        return ctx
+
     def _run(self, job_id: str, video_path: str, config_dict: dict, review_json: str | None):
-        """Esegue la pipeline nel thread. Crea PipelineConfig, cattura output."""
+        """Run the pipeline in the worker thread, capturing its output as SSE events.
+
+        The capture install, the try/except/finally around ``run_pipeline`` and the
+        final job-id reset form one lifecycle transaction, so they stay together.
+        """
         import logging
 
         import person_anonymizer as pa
         from person_anonymizer.pipeline import run_pipeline
 
-        _log = logging.getLogger(__name__)
+        log = logging.getLogger(__name__)
+        job = _JobRequest(
+            job_id=job_id, video_path=video_path, config_dict=config_dict, review_json=review_json
+        )
 
-        # --- Crea config dalla web form (con validazione) ---
         try:
             config = _build_config(config_dict)
         except ValueError as e:
-            self._sse.emit(
-                job_id,
-                "error",
-                {
-                    "job_id": job_id,
-                    "message": f"Configurazione non valida: {e}",
-                },
-            )
-            self._sse.close(job_id)
-            with self._lock:
-                self._current_job_id = None
+            self._fail(job_id, f"Configurazione non valida: {e}")
             return
 
-        # --- Assicura path assoluto per il modello YOLO ---
-        pa_dir = Path(pa.__file__).resolve().parent
-        yolo_path = pa_dir / config.yolo_model
-        yolo_resolved = yolo_path.resolve()
-        if not str(yolo_resolved).startswith(str(pa_dir.resolve())):
-            self._sse.emit(
-                job_id,
-                "error",
-                {"job_id": job_id, "message": "Percorso modello YOLO non autorizzato"},
-            )
-            self._sse.close(job_id)
-            with self._lock:
-                self._current_job_id = None
+        yolo_model = resolve_yolo_model(
+            model_name=config.yolo_model, package_dir=Path(pa.__file__).resolve().parent
+        )
+        if yolo_model is None:
+            self._fail(job_id, "Percorso modello YOLO non autorizzato")
             return
-        if yolo_resolved.exists():
-            config.yolo_model = str(yolo_resolved)
+        config.yolo_model = yolo_model
 
-        # --- Prepara output dir per questo job ---
         job_output = self._output_dir / job_id
         job_output.mkdir(exist_ok=True)
+        output_path = str(job_output / f"{Path(video_path).stem}_anonymized.mp4")
+        ctx = self._build_context(job, config, output_path)
 
-        input_stem = Path(video_path).stem
-        output_path = str(job_output / f"{input_stem}_anonymized.mp4")
-
-        # --- Costruisci contesto pipeline ---
-        mode = config.operation_mode
-
-        ctx = PipelineContext(
-            input=video_path,
-            mode=mode,
-            method=config_dict.get("anonymization_method"),
-            output=output_path,
-            no_debug=not config_dict.get("enable_debug_video", True),
-            no_report=not config_dict.get("enable_confidence_report", True),
-            review=review_json,
-            normalize=config_dict.get("normalize", False),
-            stop_event=self._stop_event,
-        )
-
-        # In modalità manual da web, passa lo stato review e il manager SSE
-        if mode == "manual":
-            ctx.review_state = self.review_state
-            ctx.sse_manager = self._sse
-            ctx.job_id = job_id
-
-        # --- Installa cattura ---
         tqdm_capture = TqdmCapture(self._sse, job_id)
         stdout_capture = StdoutCapture(self._sse, job_id)
-
         tqdm_capture.install()
         stdout_capture.install()
 
@@ -188,24 +240,12 @@ class PipelineRunner:
 
         try:
             post_check = run_pipeline(ctx, config=config)
-
-            # Successo: elenca file di output
-            outputs = []
-            for f in sorted(job_output.iterdir()):
-                if f.is_file():
-                    outputs.append(
-                        {
-                            "name": f.name,
-                            "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
-                        }
-                    )
-
             self._sse.emit(
                 job_id,
                 "completed",
                 {
                     "job_id": job_id,
-                    "outputs": outputs,
+                    "outputs": list_job_outputs(job_output),
                     "post_check": asdict(post_check),
                 },
             )
@@ -213,31 +253,16 @@ class PipelineRunner:
 
         except PipelineStoppedError:
             # The "stopped" event is emitted once, in the finally block below
-            _log.info("Pipeline stopped by user for job %s", job_id)
+            log.info("Pipeline stopped by user for job %s", job_id)
 
         except PipelineError as e:
-            self._sse.emit(
-                job_id,
-                "error",
-                {
-                    "job_id": job_id,
-                    "message": str(e),
-                },
-            )
+            self._emit_error(job_id, str(e))
 
         except Exception:
-            _log.exception("Pipeline error for job %s", job_id)
-            self._sse.emit(
-                job_id,
-                "error",
-                {
-                    "job_id": job_id,
-                    "message": "Errore durante l'elaborazione della pipeline",
-                },
-            )
+            log.exception("Pipeline error for job %s", job_id)
+            self._emit_error(job_id, "Errore durante l'elaborazione della pipeline")
 
         finally:
-            # --- Ripristina cattura output ---
             stdout_capture.uninstall()
             tqdm_capture.uninstall()
 
