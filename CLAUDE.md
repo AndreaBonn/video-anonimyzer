@@ -10,26 +10,33 @@ e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
   - `__init__.py` — Package init, esporta VERSION
   - `config.py` — PipelineConfig dataclass con validazione `__post_init__`, VERSION single source
   - `models.py` — Dataclass: PipelineContext, OutputPaths, VideoMeta, PipelineResult, FrameProcessors, FrameDetectionResult, FisheyeContext, eccezioni
-  - `pipeline.py` — Orchestratore pipeline `run_pipeline()`
+  - `pipeline.py` — Orchestratore pipeline `run_pipeline()`: ordine delle fasi, stop fra le fasi, ciclo di vita del capture
+  - `pipeline_report.py` — Funzioni pure: path di output, etichetta risoluzione, banner e riepilogo stampati
   - `pipeline_stages.py` — Re-export delle 3 fasi per backward compatibility
   - `sam3_backend.py` — Backend SAM3 opzionale: check, mask_to_polygons, Sam3ImageRefiner, Sam3VideoDetector
   - `backend_factory.py` — Factory per backend detection (yolo / yolo+sam3 / sam3)
-  - `stage_detection.py` — Detection loop (YOLO + tracking + smoothing, con SAM3 refiner opzionale)
+  - `stage_detection.py` — Detection loop (YOLO + tracking + smoothing, con SAM3 refiner opzionale), passi per frame nominati
+  - `detection_report.py` — Riga di report per frame e totali/riepilogo del loop di detection
   - `stage_refinement.py` — Auto-refinement loop
   - `stage_review.py` — Revisione manuale (web/CLI)
   - `output.py` — Salvataggio output e caricamento annotazioni JSON
   - `cli.py` — CLI entry point
   - `detection.py` — YOLO multi-scala + NMS
-  - `tracking.py` — ByteTrack + TemporalSmoother
+  - `tracking.py` — PersonTracker (ByteTrack per l'identità, una voce per ogni detection) + TemporalSmoother
   - `anonymization.py` — Oscuramento + box/poligono + resolve_intensity
   - `preprocessing.py` — CLAHE, fisheye, motion detection
   - `postprocessing.py` — Encoding, post-render check
   - `normalization.py` — Merge poligoni sovrapposti, normalizzazione annotazioni
   - `rendering.py` — Rendering video + review stats
-  - `manual_reviewer.py` — GUI OpenCV per revisione manuale
+  - `manual_reviewer.py` — Shell OpenCV della revisione manuale (frame I/O, render, mouse, tasti waitKeyEx)
+  - `review_editor.py` — ReviewEditor puro: stato e azioni dell'editor di revisione
+  - `review_drawing.py` — Disegno puro di overlay, poligono in corso e barre di stato
   - `camera_calibration.py` — Utility calibrazione camera
   - `web/` — Interfaccia web Flask con Blueprint
-    - `app.py` — App factory, upload, pipeline, SSE
+    - `app.py` — Bootstrap, route di upload/start/stop/status, stream SSE, thread di cleanup "cleanup"
+    - `upload_validation.py` — Firma magic bytes, parsing JSON annotazioni, path dei file di job
+    - `job_cleanup.py` — Selezione e rimozione dei job scaduti (orologio iniettato)
+    - `sse_stream.py` — Formato eventi SSE e generatore heartbeat/timeout
     - `extensions.py` — Limiter e helper condivisi
     - `middleware.py` — CSRF, security headers, request ID
     - `routes_review.py` — Blueprint endpoint review
@@ -39,7 +46,7 @@ e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
     - `pipeline_runner.py` — Thread wrapper per run_pipeline
     - `sse_manager.py` — Server-Sent Events manager
     - `review_state.py` — Stato review thread-safe
-- `tests/` — Test suite (pytest, 293 test)
+- `tests/` — Test suite (pytest, 1158 test, coverage riga+ramo 98%); i file `*_characterization.py` fissano il comportamento pubblico prima dei refactor
 - `reports/` — Report di audit (code roast, security, architecture)
 - `requirements.txt` — Dipendenze produzione pinnate
 - `requirements-dev.txt` — Dipendenze sviluppo (pytest, ruff)
@@ -50,8 +57,8 @@ e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
 
 ## Comandi
 ```bash
-# Attiva venv
-source person_anonymizer/.venv/bin/activate
+# Attiva venv (alla root del repo)
+source .venv/bin/activate
 
 # CLI
 python -m person_anonymizer.cli video.mp4
@@ -59,8 +66,8 @@ python -m person_anonymizer.cli video.mp4
 # Web
 python -m person_anonymizer.web.app
 
-# Test
-pytest tests/ -v
+# Test (conftest.py impedisce al thread "cleanup" di cancellare web/outputs reali)
+python -m pytest -q
 ```
 
 ## Convenzioni
