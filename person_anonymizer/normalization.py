@@ -122,6 +122,55 @@ def _merge_overlapping_rects(rects):
     return list(groups.values())
 
 
+def _polygons_to_rects(polygons):
+    """
+    Convert polygons to their bounding rectangles.
+
+    Parameters
+    ----------
+    polygons : list
+        Each polygon is a sequence of (x, y) points.
+
+    Returns
+    -------
+    list of tuple
+        Bounding rectangles (x, y, w, h), in input order.
+    """
+    return [tuple(cv2.boundingRect(np.array(poly, dtype=np.int32))) for poly in polygons]
+
+
+def _rects_to_annotation(rects, config: PipelineConfig):
+    """
+    Build a normalized annotation from rectangles, one intensity per rectangle.
+
+    Intensity is computed with ``compute_adaptive_intensity`` when adaptive
+    intensity is enabled (it does not go through ``resolve_intensity``).
+
+    Parameters
+    ----------
+    rects : list of tuple
+        Rectangles (x, y, w, h).
+    config : PipelineConfig
+        Pipeline configuration (adaptive intensity, base intensity, reference height).
+
+    Returns
+    -------
+    dict
+        {"auto": [4-point polygons], "manual": [], "intensities": [...]}.
+    """
+    polygons = [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)] for x, y, w, h in rects]
+    if config.enable_adaptive_intensity:
+        intensities = [
+            compute_adaptive_intensity(
+                h, config.anonymization_intensity, config.adaptive_reference_height
+            )
+            for _, _, _, h in rects
+        ]
+    else:
+        intensities = [config.anonymization_intensity] * len(rects)
+    return {"auto": polygons, "manual": [], "intensities": intensities}
+
+
 def normalize_annotations(annotations, config: PipelineConfig):
     """
     Normalizza le annotazioni: converte poligoni in rettangoli
@@ -153,31 +202,8 @@ def normalize_annotations(annotations, config: PipelineConfig):
             normalized[fidx] = {"auto": [], "manual": [], "intensities": []}
             continue
 
-        # Converti ogni poligono nel suo bounding rectangle (x, y, w, h)
-        rects = []
-        for poly in all_polys:
-            pts = np.array(poly, dtype=np.int32)
-            x, y, w, h = cv2.boundingRect(pts)
-            rects.append((x, y, w, h))
-
-        # Merge iterativo dei rettangoli sovrapposti
-        merged = _merge_overlapping_rects(rects)
+        merged = _merge_overlapping_rects(_polygons_to_rects(all_polys))
         total_after += len(merged)
-
-        # Converti rettangoli in poligoni e ricalcola intensità
-        new_polys = []
-        new_intensities = []
-        for x, y, w, h in merged:
-            poly = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-            new_polys.append(poly)
-            if config.enable_adaptive_intensity:
-                intensity = compute_adaptive_intensity(
-                    h, config.anonymization_intensity, config.adaptive_reference_height
-                )
-            else:
-                intensity = config.anonymization_intensity
-            new_intensities.append(intensity)
-
-        normalized[fidx] = {"auto": new_polys, "manual": [], "intensities": new_intensities}
+        normalized[fidx] = _rects_to_annotation(merged, config)
 
     return normalized, (total_before, total_after)

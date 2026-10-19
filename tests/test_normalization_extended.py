@@ -12,7 +12,9 @@ import pytest
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.normalization import (
     _merge_overlapping_rects,
+    _polygons_to_rects,
     _rects_overlap,
+    _rects_to_annotation,
     normalize_annotations,
 )
 
@@ -289,3 +291,86 @@ def test_rects_overlap_identical_or_nested_rectangles_overlap(
 ) -> None:
     assert _rects_overlap(r1=(10, 10, 10, 10), r2=other) is True
     assert _rects_overlap(r1=other, r2=(10, 10, 10, 10)) is True
+
+
+# ============================================================
+# _polygons_to_rects / _rects_to_annotation — exact coordinates
+# ============================================================
+
+
+class TestPolygonsToRects:
+    def test_bounding_rect_is_inclusive_of_max_pixel(self):
+        # cv2.boundingRect counts the last pixel: width = 10 - 0 + 1
+        poly = [(0, 0), (10, 0), (10, 20), (0, 20)]
+
+        assert _polygons_to_rects([poly]) == [(0, 0, 11, 21)]
+
+    def test_irregular_polygon_gets_enclosing_rect_in_input_order(self):
+        triangle = [(5, 5), (15, 8), (9, 30)]
+        square = [(100, 100), (109, 100), (109, 109), (100, 109)]
+
+        assert _polygons_to_rects([triangle, square]) == [(5, 5, 11, 26), (100, 100, 10, 10)]
+
+    def test_empty_input_returns_empty_list(self):
+        assert _polygons_to_rects([]) == []
+
+
+class TestRectsToAnnotation:
+    def test_rect_becomes_clockwise_four_point_polygon(self):
+        config = PipelineConfig(enable_adaptive_intensity=False, anonymization_intensity=7)
+
+        result = _rects_to_annotation([(10, 20, 30, 40)], config)
+
+        assert result == {
+            "auto": [[(10, 20), (40, 20), (40, 60), (10, 60)]],
+            "manual": [],
+            "intensities": [7],
+        }
+
+    def test_fixed_intensity_repeated_for_every_rect(self):
+        config = PipelineConfig(enable_adaptive_intensity=False, anonymization_intensity=12)
+
+        result = _rects_to_annotation([(0, 0, 5, 5), (50, 50, 5, 200)], config)
+
+        assert result["intensities"] == [12, 12]
+
+    def test_adaptive_intensity_follows_rect_height(self):
+        config = PipelineConfig(
+            enable_adaptive_intensity=True,
+            anonymization_intensity=10,
+            adaptive_reference_height=80,
+        )
+
+        # intensity = max(max(3, h // 4), int(10 * h / 80)): h=160 -> 40, h=400 -> 100, h=21 -> 5
+        result = _rects_to_annotation([(0, 0, 10, 160), (0, 0, 10, 400), (0, 0, 10, 21)], config)
+
+        assert result["intensities"] == [40, 100, 5]
+
+    def test_no_rects_gives_empty_annotation(self):
+        assert _rects_to_annotation([], PipelineConfig()) == {
+            "auto": [],
+            "manual": [],
+            "intensities": [],
+        }
+
+
+class TestNormalizeAnnotationsExactOutput:
+    def test_overlapping_polygons_merge_into_one_rect_with_intensity(self):
+        config = PipelineConfig(enable_adaptive_intensity=False, anonymization_intensity=9)
+        annotations = {
+            3: {
+                "auto": [[(0, 0), (9, 0), (9, 9), (0, 9)]],
+                "manual": [[(5, 5), (14, 5), (14, 14), (5, 14)]],
+            },
+            4: {"auto": [], "manual": []},
+        }
+
+        normalized, stats = normalize_annotations(annotations, config)
+
+        assert normalized[3] == {
+            "auto": [[(0, 0), (15, 0), (15, 15), (0, 15)]],
+            "manual": [],
+            "intensities": [9],
+        }
+        assert normalized[4] == {"auto": [], "manual": [], "intensities": []}
+        assert stats == (2, 1)
