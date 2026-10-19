@@ -23,6 +23,68 @@ def _tqdm_modules():
     return [importlib.import_module(name) for name in _TQDM_MODULE_NAMES]
 
 
+# Minimum seconds between two "progress" events of the same bar
+PROGRESS_EMIT_INTERVAL_S = 0.25
+
+
+def progress_payload(
+    *, current: int, total: int, description: str, rate: float, elapsed: float
+) -> dict:
+    """Build the SSE "progress" event payload (rate to 2 decimals, elapsed to 1)."""
+    return {
+        "current": current,
+        "total": total,
+        "description": description,
+        "rate": round(rate, 2),
+        "elapsed": round(elapsed, 1),
+    }
+
+
+def make_patched_tqdm(base_cls, sse: SSEManager, job_id: str):
+    """Return a subclass of ``base_cls`` that mirrors progress to SSE events."""
+
+    class PatchedTqdm(base_cls):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._last_emit = 0
+            sse.emit(job_id, "phase", {"description": self.desc or "", "total": self.total or 0})
+
+        def update(self, n=1):
+            super().update(n)
+            now = time.monotonic()
+            if now - self._last_emit < PROGRESS_EMIT_INTERVAL_S:
+                return
+            self._last_emit = now
+            sse.emit(
+                job_id,
+                "progress",
+                progress_payload(
+                    current=self.n,
+                    total=self.total or 0,
+                    description=self.desc or "",
+                    rate=self.format_dict.get("rate", 0) or 0,
+                    elapsed=self.format_dict.get("elapsed", 0) or 0,
+                ),
+            )
+
+        def close(self):
+            final = self.total or self.n
+            sse.emit(
+                job_id,
+                "progress",
+                progress_payload(
+                    current=final,
+                    total=final,
+                    description=self.desc or "",
+                    rate=0,
+                    elapsed=0,
+                ),
+            )
+            super().close()
+
+    return PatchedTqdm
+
+
 class TqdmCapture:
     """Monkey-patch tqdm per catturare il progresso ed emetterlo via SSE."""
 
@@ -36,66 +98,12 @@ class TqdmCapture:
         import tqdm as tqdm_module
 
         self._original_tqdm = tqdm_module.tqdm
-
-        sse = self._sse
-        job_id = self._job_id
-
-        class PatchedTqdm(self._original_tqdm):
-            def __init__(self, *a, **kw):
-                super().__init__(*a, **kw)
-                self._sse = sse
-                self._job_id = job_id
-                self._last_emit = 0
-                # Emetti evento inizio fase
-                desc = self.desc or ""
-                sse.emit(
-                    job_id,
-                    "phase",
-                    {
-                        "description": desc,
-                        "total": self.total or 0,
-                    },
-                )
-
-            def update(self, n=1):
-                super().update(n)
-                now = time.monotonic()
-                # Rate-limit: emetti max ogni 0.25s
-                if now - self._last_emit >= 0.25:
-                    self._last_emit = now
-                    rate = self.format_dict.get("rate", 0) or 0
-                    elapsed = self.format_dict.get("elapsed", 0) or 0
-                    self._sse.emit(
-                        self._job_id,
-                        "progress",
-                        {
-                            "current": self.n,
-                            "total": self.total or 0,
-                            "description": self.desc or "",
-                            "rate": round(rate, 2),
-                            "elapsed": round(elapsed, 1),
-                        },
-                    )
-
-            def close(self):
-                # Emetti progresso finale
-                self._sse.emit(
-                    self._job_id,
-                    "progress",
-                    {
-                        "current": self.total or self.n,
-                        "total": self.total or self.n,
-                        "description": self.desc or "",
-                        "rate": 0,
-                        "elapsed": 0,
-                    },
-                )
-                super().close()
+        patched = make_patched_tqdm(self._original_tqdm, self._sse, self._job_id)
 
         # "from tqdm import tqdm" copia il riferimento all'import: va sostituito in ogni modulo
-        tqdm_module.tqdm = PatchedTqdm
+        tqdm_module.tqdm = patched
         for module in _tqdm_modules():
-            module.tqdm = PatchedTqdm
+            module.tqdm = patched
 
     def uninstall(self):
         """Ripristina tqdm originale."""

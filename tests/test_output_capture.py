@@ -7,11 +7,17 @@ phase_label detection, buffer residuo, rate-limit tqdm.
 
 import io
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from person_anonymizer.web.output_capture import StdoutCapture, TqdmCapture
+from person_anonymizer.web.output_capture import (
+    PROGRESS_EMIT_INTERVAL_S,
+    StdoutCapture,
+    TqdmCapture,
+    make_patched_tqdm,
+    progress_payload,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -471,3 +477,106 @@ def test_tqdm_capture_uninstall_restores_stage_modules():
 
     assert patched is not original
     assert rendering.tqdm is original
+
+
+# ---------------------------------------------------------------------------
+# make_patched_tqdm / progress_payload (isolated from the real tqdm)
+# ---------------------------------------------------------------------------
+
+
+class _FakeBar:
+    """Minimal tqdm stand-in: no output, deterministic format_dict."""
+
+    def __init__(self, total=None, desc=None):
+        self.total = total
+        self.desc = desc
+        self.n = 0
+        self.closed = False
+        self.format_dict = {"rate": 3.14159, "elapsed": 12.349}
+
+    def update(self, n=1):
+        self.n += n
+
+    def close(self):
+        self.closed = True
+
+
+def _progress_events(sse):
+    return [c[0][2] for c in sse.emit.call_args_list if c[0][1] == "progress"]
+
+
+class TestProgressPayload:
+    def test_rounds_rate_to_two_and_elapsed_to_one_decimal(self):
+        payload = progress_payload(
+            current=7, total=10, description="Detect", rate=3.14159, elapsed=12.349
+        )
+
+        assert payload == {
+            "current": 7,
+            "total": 10,
+            "description": "Detect",
+            "rate": 3.14,
+            "elapsed": 12.3,
+        }
+
+
+class TestMakePatchedTqdm:
+    def test_init_emits_phase_event_with_description_and_total(self, mock_sse):
+        make_patched_tqdm(_FakeBar, mock_sse, "job1")(total=50, desc="Phase A")
+
+        mock_sse.emit.assert_called_once_with(
+            "job1", "phase", {"description": "Phase A", "total": 50}
+        )
+
+    def test_init_without_total_or_desc_emits_zero_and_empty(self, mock_sse):
+        make_patched_tqdm(_FakeBar, mock_sse, "job1")()
+
+        mock_sse.emit.assert_called_once_with("job1", "phase", {"description": "", "total": 0})
+
+    def test_two_updates_within_interval_emit_single_progress(self, mock_sse):
+        bar = make_patched_tqdm(_FakeBar, mock_sse, "job1")(total=100, desc="X")
+        with patch("person_anonymizer.web.output_capture.time.monotonic") as mono:
+            mono.side_effect = [100.0, 100.1]
+            bar.update(1)
+            bar.update(1)
+
+        assert len(_progress_events(mock_sse)) == 1
+
+    def test_two_updates_at_or_beyond_interval_emit_two_progress(self, mock_sse):
+        bar = make_patched_tqdm(_FakeBar, mock_sse, "job1")(total=100, desc="X")
+        with patch("person_anonymizer.web.output_capture.time.monotonic") as mono:
+            mono.side_effect = [100.0, 100.0 + PROGRESS_EMIT_INTERVAL_S]
+            bar.update(1)
+            bar.update(1)
+
+        assert len(_progress_events(mock_sse)) == 2
+
+    def test_update_payload_is_exact(self, mock_sse):
+        bar = make_patched_tqdm(_FakeBar, mock_sse, "job1")(total=100, desc="X")
+        with patch("person_anonymizer.web.output_capture.time.monotonic", return_value=100.0):
+            bar.update(4)
+
+        assert _progress_events(mock_sse) == [
+            {"current": 4, "total": 100, "description": "X", "rate": 3.14, "elapsed": 12.3}
+        ]
+
+    def test_close_emits_final_progress_and_closes_base(self, mock_sse):
+        bar = make_patched_tqdm(_FakeBar, mock_sse, "job1")(total=20, desc="X")
+        mock_sse.emit.reset_mock()
+
+        bar.close()
+
+        assert _progress_events(mock_sse) == [
+            {"current": 20, "total": 20, "description": "X", "rate": 0, "elapsed": 0}
+        ]
+        assert bar.closed is True
+
+    def test_close_without_total_uses_current_count(self, mock_sse):
+        bar = make_patched_tqdm(_FakeBar, mock_sse, "job1")(desc="X")
+        bar.n = 6
+        mock_sse.emit.reset_mock()
+
+        bar.close()
+
+        final = _progress_events(mock_sse)[0]
+        assert (final["current"], final["total"]) == (6, 6)
