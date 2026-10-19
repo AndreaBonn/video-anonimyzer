@@ -1,0 +1,93 @@
+/* ============================================
+   Person Anonymizer — UX layer: avanzamento, dettagli tecnici,
+   risultati, revisione. Caricato dopo ux.css.
+   ============================================ */
+
+/* --- Fasi e avanzamento --- */
+.phase-skip {
+    display: none;
+    font-size: 0.65rem;
+    color: var(--warning);
+    border: 1px solid var(--warning);
+    border-radius: 99px;
+    padding: 0 6px;
+}
+.phase.skipped .phase-skip { display: inline-block; }
+.phase.skipped .phase-num,
+.phase.skipped .phase-label { opacity: 0.55; }
+.progress-label { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: var(--sp-2); }
+.progress-footer { font-size: 0.8rem; color: var(--text-sec); }
+.progress-container.is-waiting .progress-bar,
+.progress-container.is-waiting .progress-footer,
+.progress-container.is-waiting .progress-detail { display: none; }
+.progress-detail { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 2px; }
+
+/* --- Dettagli tecnici --- */
+.console-details > summary { cursor: pointer; list-style: none; margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
+.console-details > summary::-webkit-details-marker { display: none; }
+.console-details > summary::after { content: "\25B8"; font-size: 0.7rem; color: var(--text-sec); }
+.console-details[open] > summary { margin-bottom: var(--sp-3); }
+.console-details[open] > summary::after { content: "\25BE"; }
+.console-details > summary:focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: var(--radius-sm); }
+.console-count { font-size: 0.75rem; font-weight: 400; color: var(--text-sec); }
+.console-toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--sp-2); }
+
+/* --- Risultati --- */
+/* .results (style.css) è flex-wrap: senza min-width 0 il video impone i suoi 640px intrinseci */
+.results { flex-direction: column; flex-wrap: nowrap; }
+.result-main, .result-others { min-width: 0; width: 100%; }
+.result-main { display: flex; flex-direction: column; gap: var(--sp-3); }
+.result-title { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+.result-player { width: 100%; max-height: 60vh; border-radius: var(--radius); background: #000; }
+.result-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.result-download { flex: none; text-decoration: none; }
+.result-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-sec); overflow-wrap: anywhere; min-width: 0; }
+.result-check { font-size: 0.85rem; border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); border: 1px solid; }
+.result-check--clean { border-color: var(--success); background: rgba(63, 185, 80, 0.1); }
+.result-check--residual { border-color: var(--warning); background: rgba(210, 153, 34, 0.12); }
+.result-check--skipped { border-color: var(--border); color: var(--text-sec); }
+.result-expire { font-size: 0.82rem; color: var(--warning); }
+.result-again { align-self: flex-start; }
+.result-others { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border-muted); }
+.result-others-title { font-size: 0.9rem; font-weight: 600; margin-bottom: var(--sp-3); }
+.result-others-sub { font-weight: 400; font-size: 0.78rem; color: var(--text-sec); }
+.results-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.result-item { flex-wrap: wrap; }
+.result-desc { flex-basis: 100%; font-size: 0.78rem; color: var(--text-sec); }
+.result-file { flex-basis: 100%; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
+
+/* --- Revisione --- */
+.review-intro {
+    font-size: 0.85rem;
+    background: var(--accent-muted);
+    border: 1px solid var(--accent-glow);
+    border-radius: var(--radius);
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: var(--sp-3);
+}
+.review-legend { display: flex; flex-wrap: wrap; gap: var(--sp-4); font-size: 0.78rem; color: var(--text-sec); margin: var(--sp-2) 0; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.legend-swatch--auto { background: rgb(0, 200, 0); }
+.legend-swatch--manual { background: rgb(255, 165, 0); }
+.review-tools { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.tool-btn {
+    border: 1px solid var(--border);
+    background: var(--bg-inset);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.8rem;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    min-height: 36px;
+}
+.tool-btn:hover { border-color: var(--accent); }
+.tool-btn--active { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
+.tool-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.review-jump { display: flex; justify-content: flex-end; margin-top: var(--sp-2); }
+.review-summary { text-align: center; font-size: 0.78rem; color: var(--text-sec); margin-top: var(--sp-2); }
+
+
+@media (max-width: 900px) {
+    .tool-btn { min-height: 44px; }
+}

@@ -1,17 +1,19 @@
 /**
  * ReviewEditor — Editor canvas per revisione manuale poligoni via web.
  *
- * Controlli:
- *   Click        → aggiunge punto al poligono in corso
- *   Enter        → chiude poligono (min 3 punti)
- *   D            → toggle modalità elimina (click su poligono per rimuoverlo)
- *   Esc          → annulla poligono in corso
- *   Frecce / Spazio → navigazione frame
- *   Ctrl+Z       → undo ultimo punto
- *   Slider       → navigazione rapida
+ * Controlli (bottoni della barra strumenti o tastiera):
+ *   Click / "Disegna area"   → aggiunge punto al poligono in corso
+ *   Enter / "Chiudi area"    → chiude poligono (min 3 punti)
+ *   D / "Elimina area"       → toggle modalità elimina (click su poligono per rimuoverlo)
+ *   Esc                      → annulla poligono in corso
+ *   Ctrl+Z / "Annulla punto" → undo ultimo punto
+ *   Frecce / Spazio, slider  → navigazione frame
  */
 const ReviewEditor = (function () {
     "use strict";
+
+    const t = I18n.t;
+    const MIN_POLYGON_POINTS = 3;
 
     // --- Stato ---
     let canvas, ctx;
@@ -23,10 +25,12 @@ const ReviewEditor = (function () {
     let deleteMode = false;
     let drawingPoints = [];      // punti del poligono in corso (coordinate originali)
     let active = false;
+    let controlsBound = false;
+    let addedCount = 0;
+    let deletedCount = 0;
 
     // --- DOM refs ---
-    let reviewCard, frameSlider, frameLabel, polyCount, modeIndicator;
-    let btnConfirm, btnPrev, btnNext;
+    let frameSlider, frameLabel, polyCount, modeIndicator;
 
     // --- Colori ---
     const COLOR_AUTO = "rgba(0, 200, 0, 0.5)";
@@ -45,29 +49,26 @@ const ReviewEditor = (function () {
         deleteMode = false;
         drawingPoints = [];
         annotations = {};
+        addedCount = 0;
+        deletedCount = 0;
         active = true;
 
-        // Riferimenti DOM
-        reviewCard = document.getElementById("reviewCard");
         canvas = document.getElementById("reviewCanvas");
         ctx = canvas.getContext("2d");
         frameSlider = document.getElementById("frameSlider");
         frameLabel = document.getElementById("frameLabel");
         polyCount = document.getElementById("polyCount");
         modeIndicator = document.getElementById("modeIndicator");
-        btnConfirm = document.getElementById("btnConfirmReview");
-        btnPrev = document.getElementById("btnPrevFrame");
-        btnNext = document.getElementById("btnNextFrame");
 
-        // Configura slider
         frameSlider.min = 0;
         frameSlider.max = metadata.total_frames - 1;
         frameSlider.value = 0;
 
-        // Mostra la card
+        const reviewCard = document.getElementById("reviewCard");
         reviewCard.classList.remove("hidden");
+        reviewCard.scrollIntoView({ block: "start" });
+        updateSummary();
 
-        // Carica annotazioni
         fetch("/api/review/annotations")
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -75,13 +76,25 @@ const ReviewEditor = (function () {
                 loadFrame(0);
             });
 
-        // Event listener
+        bindControlsOnce();
         canvas.addEventListener("click", onCanvasClick);
-        frameSlider.addEventListener("input", onSliderChange);
-        btnConfirm.addEventListener("click", onConfirm);
-        btnPrev.addEventListener("click", function () { navigateFrame(-1); });
-        btnNext.addEventListener("click", function () { navigateFrame(1); });
         document.addEventListener("keydown", onKeyDown);
+    }
+
+    // Bottoni e slider restano nel DOM tra una revisione e l'altra: un solo binding
+    function bindControlsOnce() {
+        if (controlsBound) return;
+        controlsBound = true;
+        frameSlider.addEventListener("input", onSliderChange);
+        document.getElementById("btnConfirmReview").addEventListener("click", onConfirm);
+        document.getElementById("btnPrevFrame").addEventListener("click", function () { navigateFrame(-1); });
+        document.getElementById("btnNextFrame").addEventListener("click", function () { navigateFrame(1); });
+        document.getElementById("btnNextPeople").addEventListener("click", jumpToNextWithPeople);
+        document.getElementById("toolDraw").addEventListener("click", function () { setDeleteMode(false); });
+        document.getElementById("toolDelete").addEventListener("click", function () { setDeleteMode(!deleteMode); });
+        document.getElementById("toolClose").addEventListener("click", closePolygon);
+        document.getElementById("toolUndo").addEventListener("click", undoPoint);
+        document.addEventListener("i18n:applied", function () { if (active) updateInfoBar(); });
     }
 
     // ============================
@@ -118,11 +131,7 @@ const ReviewEditor = (function () {
         ctx.drawImage(frameImg, 0, 0);
 
         const fdata = getFrameAnnotations(currentFrame);
-
-        // Poligoni auto (verde)
         drawPolygons(fdata.auto || [], COLOR_AUTO, COLOR_AUTO_STROKE);
-
-        // Poligoni manuali (arancione)
         drawPolygons(fdata.manual || [], COLOR_MANUAL, COLOR_MANUAL_STROKE);
 
         // Poligono in corso (ciano)
@@ -136,14 +145,10 @@ const ReviewEditor = (function () {
             ctx.strokeStyle = COLOR_DRAWING;
             ctx.lineWidth = 2;
             ctx.stroke();
-
-            // Riempimento se >= 3 punti
-            if (drawingPoints.length >= 3) {
+            if (drawingPoints.length >= MIN_POLYGON_POINTS) {
                 ctx.fillStyle = COLOR_DRAWING_FILL;
                 ctx.fill();
             }
-
-            // Punti
             for (let j = 0; j < drawingPoints.length; j++) {
                 const pp = toDisplay(drawingPoints[j]);
                 ctx.beginPath();
@@ -159,7 +164,7 @@ const ReviewEditor = (function () {
     function drawPolygons(polys, fill, stroke) {
         for (let i = 0; i < polys.length; i++) {
             const poly = polys[i];
-            if (poly.length < 3) continue;
+            if (poly.length < MIN_POLYGON_POINTS) continue;
             ctx.beginPath();
             for (let j = 0; j < poly.length; j++) {
                 const pt = toDisplay(poly[j]);
@@ -197,14 +202,62 @@ const ReviewEditor = (function () {
         return annotations[key];
     }
 
+    function frameHasPeople(idx) {
+        const fdata = annotations[String(idx)];
+        return Boolean(fdata) && ((fdata.auto || []).length + (fdata.manual || []).length) > 0;
+    }
+
     function saveFrameAnnotations() {
         const key = String(currentFrame);
         const fdata = annotations[key] || { auto: [], manual: [], intensities: [] };
         fetch("/api/review/annotations/" + currentFrame, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: Object.assign({ "Content-Type": "application/json" }, UI.CSRF_HEADER),
             body: JSON.stringify(fdata),
         });
+    }
+
+    // ============================
+    // Azioni
+    // ============================
+    function closePolygon() {
+        if (!active) return;
+        if (drawingPoints.length < MIN_POLYGON_POINTS) {
+            UI.showToast(t("review.close.need_points"), "info");
+            return;
+        }
+        getFrameAnnotations(currentFrame).manual.push(drawingPoints.slice());
+        drawingPoints = [];
+        addedCount++;
+        saveFrameAnnotations();
+        updateSummary();
+        render();
+    }
+
+    function undoPoint() {
+        if (!active || drawingPoints.length === 0) return;
+        drawingPoints.pop();
+        render();
+    }
+
+    function setDeleteMode(on) {
+        if (!active) return;
+        deleteMode = on;
+        drawingPoints = [];
+        render();
+    }
+
+    function jumpToNextWithPeople() {
+        if (!active) return;
+        for (let idx = currentFrame + 1; idx < metadata.total_frames; idx++) {
+            if (frameHasPeople(idx)) {
+                drawingPoints = [];
+                deleteMode = false;
+                loadFrame(idx);
+                return;
+            }
+        }
+        UI.showToast(t("review.no_more_people"), "info");
     }
 
     // ============================
@@ -213,19 +266,16 @@ const ReviewEditor = (function () {
     function onCanvasClick(e) {
         if (!active) return;
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        // Il canvas è scalato via CSS: riporta il click alle coordinate del bitmap
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        const orig = toOriginal(x, y);
 
         if (deleteMode) {
-            // Elimina poligono sotto il cursore
-            const orig = toOriginal(x, y);
             deletePolygonAt(orig[0], orig[1]);
             return;
         }
-
-        // Aggiungi punto al poligono in corso
-        const pt = toOriginal(x, y);
-        drawingPoints.push(pt);
+        drawingPoints.push(orig);
         render();
     }
 
@@ -234,24 +284,14 @@ const ReviewEditor = (function () {
 
         switch (e.key) {
             case "Enter":
-                // Chiudi poligono
-                if (drawingPoints.length >= 3) {
-                    const fdata = getFrameAnnotations(currentFrame);
-                    fdata.manual.push(drawingPoints.slice());
-                    drawingPoints = [];
-                    saveFrameAnnotations();
-                    render();
-                }
+                if (e.target.closest && e.target.closest("button")) return;
+                closePolygon();
                 e.preventDefault();
                 break;
 
             case "d":
             case "D":
-                // Toggle modalità elimina
-                deleteMode = !deleteMode;
-                drawingPoints = [];
-                updateInfoBar();
-                render();
+                setDeleteMode(!deleteMode);
                 e.preventDefault();
                 break;
 
@@ -261,15 +301,14 @@ const ReviewEditor = (function () {
                     drawingPoints = [];
                     render();
                 } else if (deleteMode) {
-                    deleteMode = false;
-                    updateInfoBar();
-                    render();
+                    setDeleteMode(false);
                 }
                 e.preventDefault();
                 break;
 
             case "ArrowRight":
             case " ":
+                if (e.key === " " && e.target.closest && e.target.closest("button")) return;
                 navigateFrame(1);
                 e.preventDefault();
                 break;
@@ -281,11 +320,7 @@ const ReviewEditor = (function () {
 
             case "z":
                 if (e.ctrlKey || e.metaKey) {
-                    // Undo ultimo punto
-                    if (drawingPoints.length > 0) {
-                        drawingPoints.pop();
-                        render();
-                    }
+                    undoPoint();
                     e.preventDefault();
                 }
                 break;
@@ -293,15 +328,15 @@ const ReviewEditor = (function () {
     }
 
     function onSliderChange() {
-        const idx = parseInt(frameSlider.value);
+        if (!active) return;
         drawingPoints = [];
         deleteMode = false;
-        loadFrame(idx);
+        loadFrame(parseInt(frameSlider.value, 10));
     }
 
     function onConfirm() {
         if (!active) return;
-        fetch("/api/review/confirm", { method: "POST" })
+        fetch("/api/review/confirm", { method: "POST", headers: UI.CSRF_HEADER })
             .then(function (r) { return r.json(); })
             .then(function () {
                 deactivate();
@@ -312,6 +347,7 @@ const ReviewEditor = (function () {
     // Navigazione
     // ============================
     function navigateFrame(delta) {
+        if (!active) return;
         const next = currentFrame + delta;
         if (next < 0 || next >= metadata.total_frames) return;
         drawingPoints = [];
@@ -361,46 +397,60 @@ const ReviewEditor = (function () {
         }
 
         if (modified) {
+            deletedCount++;
             saveFrameAnnotations();
+            updateSummary();
             render();
         }
     }
 
     // ============================
-    // Info bar
+    // Info bar e riepilogo
     // ============================
+    function frameTime(idx) {
+        return metadata.fps > 0 ? UI.formatClock(idx / metadata.fps) : "--:--";
+    }
+
     function updateInfoBar() {
         if (!metadata) return;
-        frameLabel.textContent = I18n.t("review.frame", currentFrame, metadata.total_frames - 1);
+        const last = metadata.total_frames - 1;
+        frameLabel.textContent = t("review.frame", frameTime(currentFrame), frameTime(last), currentFrame, last);
 
         const fdata = getFrameAnnotations(currentFrame);
         const count = (fdata.auto || []).length + (fdata.manual || []).length;
-        polyCount.textContent = I18n.t("review.polygons", count);
+        polyCount.textContent = t("review.polygons", count);
 
-        if (deleteMode) {
-            modeIndicator.textContent = "[DEL]";
-            modeIndicator.className = "review-mode-delete";
-            canvas.style.cursor = "not-allowed";
-        } else {
-            modeIndicator.textContent = "[NORM]";
-            modeIndicator.className = "review-mode-normal";
-            canvas.style.cursor = "crosshair";
-        }
+        modeIndicator.textContent = t(deleteMode ? "review.mode.delete" : "review.mode.draw");
+        modeIndicator.className = deleteMode ? "review-mode-delete" : "review-mode-normal";
+        canvas.style.cursor = deleteMode ? "not-allowed" : "crosshair";
+
+        const draw = document.getElementById("toolDraw");
+        const del = document.getElementById("toolDelete");
+        draw.classList.toggle("tool-btn--active", !deleteMode);
+        draw.setAttribute("aria-pressed", String(!deleteMode));
+        del.classList.toggle("tool-btn--active", deleteMode);
+        del.setAttribute("aria-pressed", String(deleteMode));
+    }
+
+    function updateSummary() {
+        const el = document.getElementById("reviewSummary");
+        el.textContent = addedCount + deletedCount === 0
+            ? t("review.summary.none")
+            : t("review.summary", addedCount, deletedCount);
     }
 
     // ============================
     // Disattivazione
     // ============================
     function deactivate() {
+        // Chiamata anche a fine pipeline (stop/errore) quando nessuna revisione è stata aperta
+        if (!canvas) return;
         active = false;
         canvas.removeEventListener("click", onCanvasClick);
         document.removeEventListener("keydown", onKeyDown);
-        reviewCard.classList.add("hidden");
+        document.getElementById("reviewCard").classList.add("hidden");
     }
 
-    // ============================
-    // API pubblica
-    // ============================
     return {
         init: init,
         deactivate: deactivate,

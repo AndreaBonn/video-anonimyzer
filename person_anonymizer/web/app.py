@@ -21,6 +21,7 @@ from person_anonymizer.web.pipeline_runner import PipelineRunner
 from person_anonymizer.web.routes_output import output_bp
 from person_anonymizer.web.routes_review import review_bp
 from person_anonymizer.web.sse_manager import SSEManager
+from person_anonymizer.web.video_info import read_video_info
 
 app = Flask(__name__)
 _secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -171,7 +172,14 @@ def upload_video():
 
     size_mb = dest.stat().st_size / (1024 * 1024)
 
-    return jsonify({"job_id": job_id, "filename": safe_name, "size_mb": round(size_mb, 2)})
+    return jsonify(
+        {
+            "job_id": job_id,
+            "filename": safe_name,
+            "size_mb": round(size_mb, 2),
+            **read_video_info(dest),
+        }
+    )
 
 
 # ---------- Upload JSON annotazioni ----------

@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Person Anonymizer</title>
+    <script src="/static/js/theme.js"></script>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ux.css">
+    <link rel="stylesheet" href="/static/css/ux-run.css">
 </head>
 <body>
 
@@ -12,12 +15,17 @@
 <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
 <!-- Tooltip globale (posizionato via JS) -->
-<div id="helpTooltip" class="help-tooltip" role="tooltip"></div>
+<div id="helpTooltip" class="help-tooltip" role="tooltip" aria-hidden="true"></div>
 
 <!-- Header -->
 <header class="header">
-    <h1>Person Anonymizer</h1>
+    <div class="header-brand">
+        <h1>Person Anonymizer</h1>
+        <p class="header-tagline" data-i18n="header.tagline">Oscura automaticamente le persone nei tuoi video</p>
+    </div>
     <div class="header-status">
+        <button id="btnGuide" class="header-btn" type="button" data-i18n="header.guide">Come funziona</button>
+        <button id="btnTheme" class="header-btn" type="button" aria-label="Cambia tema chiaro/scuro" data-i18n-aria="header.theme.aria" data-i18n-title="header.theme.aria" title="Cambia tema chiaro/scuro">&#9680;</button>
         <div class="lang-switcher" role="group" aria-label="Cambia lingua" data-i18n-aria="lang.toggle.aria">
             <button id="langBtnIt" class="lang-btn lang-btn--active" type="button" data-lang="it">IT</button>
             <button id="langBtnEn" class="lang-btn" type="button" data-lang="en">EN</button>
@@ -33,9 +41,9 @@
     <!-- Pannello Sinistro: Configurazione -->
     <aside class="panel panel-config">
 
-        <!-- Upload Video -->
+        <!-- 1. Upload Video -->
         <section class="card">
-            <h2 class="card-title" data-i18n="upload.title">Video di Input</h2>
+            <h2 class="card-title"><span class="step-badge" aria-hidden="true">1</span><span data-i18n="upload.title">Carica il video</span></h2>
             <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Trascina un video o clicca per selezionare" data-i18n-aria="upload.dropzone.aria">
                 <div class="dropzone-content">
                     <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -46,6 +54,7 @@
                     <p data-i18n="upload.dropzone.text">Trascina un video qui</p>
                     <p class="dropzone-hint" data-i18n="upload.dropzone.hint">oppure clicca per selezionare</p>
                     <p class="dropzone-formats">MP4, MOV, AVI, MKV, WEBM, M4V</p>
+                    <p class="dropzone-limits" data-i18n="upload.limits">Fino a 2 GB. Il video resta sul server dell'app e viene cancellato dopo circa un'ora.</p>
                 </div>
                 <input type="file" id="fileInput" accept=".mp4,.m4v,.mov,.avi,.mkv,.webm" hidden>
             </div>
@@ -56,212 +65,249 @@
                 </div>
                 <div id="uploadProgressText" class="upload-progress-text"></div>
             </div>
-            <div id="fileInfo" class="file-info hidden">
-                <span id="fileName" class="file-name"></span>
-                <span id="fileSize" class="file-size"></span>
-                <button id="removeFile" class="btn-icon" title="Rimuovi" aria-label="Rimuovi file" data-i18n-title="upload.remove.title" data-i18n-aria="upload.remove.aria">&times;</button>
+            <div id="fileInfo" class="video-card hidden">
+                <video id="videoThumb" class="video-thumb" muted playsinline preload="metadata" aria-hidden="true"></video>
+                <div class="video-meta">
+                    <span id="fileName" class="file-name"></span>
+                    <span id="fileDetails" class="file-size"></span>
+                    <button id="removeFile" class="link-btn" type="button" data-i18n="upload.change">Cambia video</button>
+                </div>
             </div>
         </section>
 
-        <!-- Impostazioni Base -->
-        <section class="card">
-            <h2 class="card-title collapsible" data-target="section-base" tabindex="0" role="button" aria-expanded="true">
-                <span data-i18n="settings.base.title">Impostazioni Base</span>
-                <span class="chevron" aria-hidden="true">&#9662;</span>
-            </h2>
-            <div id="section-base" class="card-body">
+        <fieldset id="settingsFieldset" class="settings-fieldset">
+            <legend class="visually-hidden" data-i18n="settings.legend">Impostazioni</legend>
 
-                <div class="form-group">
-                    <label><span data-i18n="settings.mode.label">Modalit&agrave; operativa</span> <button type="button" class="help-btn" data-help="Automatica: elabora tutto senza intervento. Manuale: permette di rivedere e correggere i rilevamenti nel browser prima del rendering finale." data-i18n-help="settings.mode.help" aria-label="Aiuto: Modalità operativa" data-i18n-aria="settings.mode.aria">?</button></label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="operation_mode" value="auto" checked>
-                            <span data-i18n="settings.mode.auto">Automatica</span>
+            <!-- 2. Impostazioni Base -->
+            <section class="card">
+                <h2 class="card-title collapsible" data-target="section-base" tabindex="0" role="button" aria-expanded="true">
+                    <span class="step-badge" aria-hidden="true">2</span>
+                    <span data-i18n="settings.base.title">Scegli come oscurare</span>
+                    <span class="chevron" aria-hidden="true">&#9662;</span>
+                </h2>
+                <div id="section-base" class="card-body">
+
+                    <div class="form-group" role="radiogroup" aria-labelledby="lbl-mode">
+                        <div class="field-label"><span id="lbl-mode" data-i18n="settings.mode.label">Come vuoi lavorare</span> <button type="button" class="help-btn" data-help="" data-i18n-help="settings.mode.help" aria-label="Aiuto" data-i18n-aria="settings.mode.aria">?</button></div>
+                        <div class="choice-grid">
+                            <label class="choice-card">
+                                <input type="radio" name="operation_mode" value="auto" checked>
+                                <span class="choice-title" data-i18n="settings.mode.auto">Automatica</span>
+                                <span class="choice-desc" data-i18n="settings.mode.auto.desc">Fa tutto da sola: carichi, avvii, scarichi.</span>
+                            </label>
+                            <label class="choice-card">
+                                <input type="radio" name="operation_mode" value="manual">
+                                <span class="choice-title" data-i18n="settings.mode.manual">Con revisione</span>
+                                <span class="choice-desc" data-i18n="settings.mode.manual.desc">Prima del video finale controlli i riquadri e correggi dove serve.</span>
+                            </label>
+                        </div>
+                        <p class="field-tip" data-i18n="settings.mode.tip">Prima volta? Lascia Automatica: puoi sempre rifare il video con la revisione.</p>
+                    </div>
+
+                    <div class="form-group" role="radiogroup" aria-labelledby="lbl-method">
+                        <div class="field-label"><span id="lbl-method" data-i18n="settings.method.label">Come coprire le persone</span> <button type="button" class="help-btn" data-help="" data-i18n-help="settings.method.help" aria-label="Aiuto" data-i18n-aria="settings.method.aria">?</button></div>
+                        <div class="choice-grid">
+                            <label class="choice-card">
+                                <input type="radio" name="anonymization_method" value="pixelation" checked>
+                                <span class="method-preview method-preview--pixel" aria-hidden="true"></span>
+                                <span class="choice-title" data-i18n="settings.method.pixel">Mosaico</span>
+                                <span class="choice-desc" data-i18n="settings.method.pixel.desc">Quadretti grandi, si vede subito che è oscurato.</span>
+                            </label>
+                            <label class="choice-card">
+                                <input type="radio" name="anonymization_method" value="blur">
+                                <span class="method-preview method-preview--blur" aria-hidden="true"></span>
+                                <span class="choice-title" data-i18n="settings.method.blur">Sfocatura</span>
+                                <span class="choice-desc" data-i18n="settings.method.blur.desc">Più morbida da guardare.</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" role="radiogroup" aria-labelledby="lbl-quality">
+                        <div class="field-label"><span id="lbl-quality" data-i18n="settings.quality.label">Qualità del riconoscimento</span></div>
+                        <div class="segmented">
+                            <label><input type="radio" name="quality_preset" value="fast"><span data-i18n="settings.quality.fast">Veloce</span></label>
+                            <label><input type="radio" name="quality_preset" value="balanced"><span data-i18n="settings.quality.balanced">Bilanciata</span></label>
+                            <label><input type="radio" name="quality_preset" value="accurate" checked><span data-i18n="settings.quality.accurate">Accurata</span></label>
+                        </div>
+                        <p id="qualityHint" class="field-tip" data-i18n="settings.quality.hint.accurate">Accurata è la più lenta ma trova anche persone piccole o lontane. Consigliata.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="anonymization_intensity" class="field-label">
+                            <span data-i18n="settings.intensity.label">Quanto coprire:</span> <span class="value-display" id="val-intensity">10</span> <button type="button" class="help-btn" data-help="" data-i18n-help="settings.intensity.help" aria-label="Aiuto" data-i18n-aria="settings.intensity.aria">?</button>
                         </label>
-                        <label class="radio-label">
-                            <input type="radio" name="operation_mode" value="manual">
-                            <span data-i18n="settings.mode.manual">Manuale (revisione nel browser)</span>
+                        <input type="range" id="anonymization_intensity" min="2" max="50" value="10" step="1">
+                        <div class="range-scale" aria-hidden="true"><span data-i18n="scale.light">Leggera</span><span data-i18n="scale.medium">Media</span><span data-i18n="scale.strong">Forte</span></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="person_padding" class="field-label">
+                            <span data-i18n="settings.padding.label">Margine attorno alla persona:</span> <span class="value-display" id="val-padding">15</span> <button type="button" class="help-btn" data-help="" data-i18n-help="settings.padding.help" aria-label="Aiuto" data-i18n-aria="settings.padding.aria">?</button>
+                        </label>
+                        <input type="range" id="person_padding" min="0" max="60" value="15" step="1">
+                        <div class="range-scale" aria-hidden="true"><span data-i18n="scale.narrow">Stretto</span><span data-i18n="scale.normal">Normale</span><span data-i18n="scale.wide">Largo</span></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. Impostazioni avanzate (chiuse di default) -->
+            <section class="card">
+                <h2 class="card-title collapsible collapsed" data-target="section-advanced" tabindex="0" role="button" aria-expanded="false">
+                    <span class="step-badge step-badge--muted" aria-hidden="true">3</span>
+                    <span data-i18n="advanced.title">Impostazioni avanzate (facoltative)</span>
+                    <span class="chevron" aria-hidden="true">&#9662;</span>
+                </h2>
+                <p class="card-summary" data-i18n="advanced.summary">I valori consigliati sono già attivi. Apri solo se vuoi regolare il riconoscimento.</p>
+                <div id="section-advanced" class="card-body collapsed-body">
+
+                    <h3 class="subsection-title" data-i18n="detection.title">Riconoscimento</h3>
+
+                    <div class="form-group">
+                        <label for="detection_backend" class="field-label"><span data-i18n="detection.backend.label">Motore di riconoscimento</span> <button type="button" class="help-btn" data-help="" data-i18n-help="detection.backend.help" aria-label="Aiuto" data-i18n-aria="detection.backend.aria">?</button></label>
+                        <select id="detection_backend">
+                            <option value="yolo" data-i18n="detection.backend.opt.yolo">YOLO (default)</option>
+                            <option value="yolo+sam3" data-i18n="detection.backend.opt.hybrid">YOLO + SAM3 (ibrido)</option>
+                            <option value="sam3" data-i18n="detection.backend.opt.sam3">SAM3 completo</option>
+                        </select>
+                        <p id="sam3Unavailable" class="field-warning hidden" data-i18n="detection.backend.unavailable">SAM3 non è installato su questo computer: le opzioni che lo usano sono disattivate.</p>
+                    </div>
+
+                    <div class="form-group" id="yolo-model-group">
+                        <label for="yolo_model" class="field-label"><span data-i18n="detection.model.label">Precisione</span> <button type="button" class="help-btn" data-help="" data-i18n-help="detection.model.help" aria-label="Aiuto" data-i18n-aria="detection.model.aria">?</button></label>
+                        <select id="yolo_model">
+                            <option value="yolov8x.pt" data-i18n="detection.model.opt.x">YOLOv8x (accurato, lento)</option>
+                            <option value="yolov8n.pt" data-i18n="detection.model.opt.n">YOLOv8n (veloce, meno accurato)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="detection_sensitivity" class="field-label">
+                            <span data-i18n="detection.sensitivity.label">Sensibilità:</span> <span class="value-display" id="val-sensitivity">80</span> <button type="button" class="help-btn" data-help="" data-i18n-help="detection.sensitivity.help" aria-label="Aiuto" data-i18n-aria="detection.sensitivity.aria">?</button>
+                        </label>
+                        <input type="range" id="detection_sensitivity" min="5" max="95" value="80" step="5">
+                        <div class="range-scale" aria-hidden="true"><span data-i18n="scale.low">Bassa</span><span data-i18n="scale.medium.f">Media</span><span data-i18n="scale.high">Alta</span></div>
+                        <p class="field-tip" data-i18n="detection.sensitivity.tip">Alta trova anche persone poco visibili, con qualche riquadro in più da controllare.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="nms_iou_threshold" class="field-label">
+                            <span data-i18n="detection.nms.label">Unione riquadri doppi:</span> <span class="value-display" id="val-nms">0.55</span> <button type="button" class="help-btn" data-help="" data-i18n-help="detection.nms.help" aria-label="Aiuto" data-i18n-aria="detection.nms.aria">?</button>
+                        </label>
+                        <input type="range" id="nms_iou_threshold" min="0.1" max="0.9" value="0.55" step="0.05">
+                    </div>
+
+                    <h3 class="subsection-title" data-i18n="advanced.features.title">Funzioni extra</h3>
+
+                    <div class="toggle-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_sliding_window" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.sliding.label">Cerca persone piccole o lontane</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.sliding.help" aria-label="Aiuto" data-i18n-aria="advanced.sliding.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_tracking" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.tracking.label">Segui le persone da un frame all'altro</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.tracking.help" aria-label="Aiuto" data-i18n-aria="advanced.tracking.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_temporal_smoothing" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.smoothing.label">Riduci il tremolio dei riquadri</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.smoothing.help" aria-label="Aiuto" data-i18n-aria="advanced.smoothing.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_adaptive_intensity" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.adaptive.label">Copri di più le persone piccole</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.adaptive.help" aria-label="Aiuto" data-i18n-aria="advanced.adaptive.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_post_render_check" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.postcheck.label">Ricontrolla il video prima di finirlo</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.postcheck.help" aria-label="Aiuto" data-i18n-aria="advanced.postcheck.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_fisheye_correction" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.fisheye.label">Correggi telecamere grandangolari</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.fisheye.help" aria-label="Aiuto" data-i18n-aria="advanced.fisheye.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_motion_detection">
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.motion.label">Analizza solo le zone in movimento</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.motion.help" aria-label="Aiuto" data-i18n-aria="advanced.motion.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_subframe_interpolation">
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.interpolation.label">Riempi i vuoti tra un frame e l'altro</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.interpolation.help" aria-label="Aiuto" data-i18n-aria="advanced.interpolation.aria">?</button>
+                        </label>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div class="toggle-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_debug_video" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.debug.label">Crea anche il video di controllo</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.debug.help" aria-label="Aiuto" data-i18n-aria="advanced.debug.aria">?</button>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable_confidence_report" checked>
+                            <span class="toggle-switch"></span>
+                            <span data-i18n="advanced.report.label">Crea il report dei rilevamenti (CSV)</span>
+                            <button type="button" class="help-btn" data-help="" data-i18n-help="advanced.report.help" aria-label="Aiuto" data-i18n-aria="advanced.report.aria">?</button>
                         </label>
                     </div>
                 </div>
+            </section>
 
-                <div class="form-group">
-                    <label><span data-i18n="settings.method.label">Metodo di oscuramento</span> <button type="button" class="help-btn" data-help="Pixelation: rende irriconoscibile la persona con effetto mosaico. Blur: sfoca l'area con effetto gaussiano." data-i18n-help="settings.method.help" aria-label="Aiuto: Metodo di oscuramento" data-i18n-aria="settings.method.aria">?</button></label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="anonymization_method" value="pixelation" checked>
-                            <span>Pixelation</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="anonymization_method" value="blur">
-                            <span>Blur</span>
-                        </label>
+            <!-- Riprendi un lavoro salvato -->
+            <section class="card">
+                <h2 class="card-title collapsible collapsed" data-target="section-review" tabindex="0" role="button" aria-expanded="false">
+                    <span data-i18n="review.json.title">Riprendi un lavoro salvato</span>
+                    <span class="chevron" aria-hidden="true">&#9662;</span>
+                </h2>
+                <div id="section-review" class="card-body collapsed-body">
+                    <p class="hint" data-i18n="review.json.hint">Hai il file annotazioni (.json) di un'elaborazione precedente? Carica prima lo stesso video, poi il file.</p>
+                    <p id="jsonNeedsVideo" class="field-warning" data-i18n="review.json.needs_video">Carica prima il video per poter scegliere il file.</p>
+                    <div class="form-group">
+                        <input type="file" id="jsonFileInput" accept=".json" disabled aria-label="File annotazioni JSON" data-i18n-aria="review.json.input.aria">
                     </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="anonymization_intensity">
-                        <span data-i18n="settings.intensity.label">Intensit&agrave; oscuramento:</span> <span class="value-display" id="val-intensity">10</span> <button type="button" class="help-btn" data-help="Valore più alto = oscuramento più forte. Controlla la dimensione dei pixel (pixelation) o il raggio di sfocatura (blur)." data-i18n-help="settings.intensity.help" aria-label="Aiuto: Intensità oscuramento" data-i18n-aria="settings.intensity.aria">?</button>
-                    </label>
-                    <input type="range" id="anonymization_intensity" min="2" max="50" value="10" step="1">
-                </div>
-
-                <div class="form-group">
-                    <label for="person_padding">
-                        <span data-i18n="settings.padding.label">Padding persona (px):</span> <span class="value-display" id="val-padding">15</span> <button type="button" class="help-btn" data-help="Pixel aggiuntivi intorno alla persona rilevata. Valori più alti oscurano un'area più ampia attorno alla sagoma per maggiore sicurezza." data-i18n-help="settings.padding.help" aria-label="Aiuto: Padding persona" data-i18n-aria="settings.padding.aria">?</button>
-                    </label>
-                    <input type="range" id="person_padding" min="0" max="60" value="15" step="1">
-                </div>
-            </div>
-        </section>
-
-        <!-- Rilevamento -->
-        <section class="card">
-            <h2 class="card-title collapsible" data-target="section-detection" tabindex="0" role="button" aria-expanded="true">
-                <span data-i18n="detection.title">Rilevamento</span>
-                <span class="chevron" aria-hidden="true">&#9662;</span>
-            </h2>
-            <div id="section-detection" class="card-body">
-
-                <div class="form-group">
-                    <label for="detection_backend"><span data-i18n="detection.backend.label">Backend rilevamento</span> <button type="button" class="help-btn" data-help="YOLO: default, funziona su qualsiasi GPU. YOLO+SAM3: YOLO per detection + SAM3 per segmentazione precisa (richiede 8GB VRAM). SAM3: detection e tracking completo via SAM3 (richiede 16GB VRAM e installazione separata)." data-i18n-help="detection.backend.help" aria-label="Aiuto: Backend rilevamento" data-i18n-aria="detection.backend.aria">?</button></label>
-                    <select id="detection_backend">
-                        <option value="yolo" data-i18n="detection.backend.opt.yolo">YOLO (default)</option>
-                        <option value="yolo+sam3" data-i18n="detection.backend.opt.hybrid">YOLO + SAM3 (ibrido)</option>
-                        <option value="sam3" data-i18n="detection.backend.opt.sam3">SAM3 completo</option>
-                    </select>
-                </div>
-
-                <div class="form-group" id="yolo-model-group">
-                    <label for="yolo_model"><span data-i18n="detection.model.label">Modello YOLO</span> <button type="button" class="help-btn" data-help="YOLOv8x: più accurato ma più lento, consigliato per persone piccole o distanti. YOLOv8n: molto più veloce, adatto per persone ben visibili." data-i18n-help="detection.model.help" aria-label="Aiuto: Modello YOLO" data-i18n-aria="detection.model.aria">?</button></label>
-                    <select id="yolo_model">
-                        <option value="yolov8x.pt" data-i18n="detection.model.opt.x">YOLOv8x (accurato, lento)</option>
-                        <option value="yolov8n.pt" data-i18n="detection.model.opt.n">YOLOv8n (veloce, meno accurato)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="detection_confidence">
-                        <span data-i18n="detection.confidence.label">Confidenza rilevamento:</span> <span class="value-display" id="val-confidence">0.20</span> <button type="button" class="help-btn" data-help="Soglia minima di confidenza per accettare un rilevamento. Più bassa = più rilevamenti (anche falsi positivi), più alta = solo rilevamenti certi." data-i18n-help="detection.confidence.help" aria-label="Aiuto: Confidenza rilevamento" data-i18n-aria="detection.confidence.aria">?</button>
-                    </label>
-                    <input type="range" id="detection_confidence" min="0.05" max="0.95" value="0.20" step="0.05">
-                </div>
-
-                <div class="form-group">
-                    <label for="nms_iou_threshold">
-                        <span data-i18n="detection.nms.label">NMS IoU threshold:</span> <span class="value-display" id="val-nms">0.55</span> <button type="button" class="help-btn" data-help="Soglia per eliminare rilevamenti duplicati sovrapposti. Più bassa = rimozione duplicati più aggressiva, più alta = mantiene rilevamenti vicini." data-i18n-help="detection.nms.help" aria-label="Aiuto: NMS IoU threshold" data-i18n-aria="detection.nms.aria">?</button>
-                    </label>
-                    <input type="range" id="nms_iou_threshold" min="0.1" max="0.9" value="0.55" step="0.05">
-                </div>
-            </div>
-        </section>
-
-        <!-- Funzionalit&agrave; Avanzate -->
-        <section class="card">
-            <h2 class="card-title collapsible" data-target="section-advanced" tabindex="0" role="button" aria-expanded="true">
-                <span data-i18n="advanced.title">Funzionalit&agrave; Avanzate</span>
-                <span class="chevron" aria-hidden="true">&#9662;</span>
-            </h2>
-            <div id="section-advanced" class="card-body">
-
-                <div class="toggle-group">
+                    <div id="jsonFileInfo" class="file-info hidden">
+                        <span id="jsonFileName" class="file-name"></span>
+                        <button id="removeJsonFile" class="btn-icon" type="button" title="Rimuovi" aria-label="Rimuovi file JSON" data-i18n-title="review.json.remove.title" data-i18n-aria="review.json.remove.aria">&times;</button>
+                    </div>
                     <label class="toggle-label">
-                        <input type="checkbox" id="enable_sliding_window" checked>
+                        <input type="checkbox" id="normalize">
                         <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.sliding.label">Sliding Window</span>
-                        <button type="button" class="help-btn" data-help="Analizza il frame in sotto-regioni sovrapposte per rilevare persone piccole o ai bordi che il modello potrebbe non vedere nell'immagine completa." data-i18n-help="advanced.sliding.help" aria-label="Aiuto: Sliding Window" data-i18n-aria="advanced.sliding.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_tracking" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.tracking.label">ByteTrack Tracking</span>
-                        <button type="button" class="help-btn" data-help="Associa le persone tra frame consecutivi per mantenere un'identità consistente e ridurre falsi negativi temporanei." data-i18n-help="advanced.tracking.help" aria-label="Aiuto: ByteTrack Tracking" data-i18n-aria="advanced.tracking.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_temporal_smoothing" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.smoothing.label">Temporal Smoothing (EMA)</span>
-                        <button type="button" class="help-btn" data-help="Smussa le coordinate dei bounding box nel tempo con media mobile esponenziale, riducendo il tremolio dell'oscuramento." data-i18n-help="advanced.smoothing.help" aria-label="Aiuto: Temporal Smoothing" data-i18n-aria="advanced.smoothing.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_adaptive_intensity" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.adaptive.label">Intensit&agrave; Adattiva</span>
-                        <button type="button" class="help-btn" data-help="Regola automaticamente l'intensità in base alla dimensione della persona: più piccola = più intensa per garantire l'anonimizzazione." data-i18n-help="advanced.adaptive.help" aria-label="Aiuto: Intensità Adattiva" data-i18n-aria="advanced.adaptive.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_post_render_check" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.postcheck.label">Verifica Post-Rendering</span>
-                        <button type="button" class="help-btn" data-help="Dopo il rendering, rianalizza il video anonimizzato per verificare che non siano rimaste persone visibili. Aggiunge un passaggio di sicurezza." data-i18n-help="advanced.postcheck.help" aria-label="Aiuto: Verifica Post-Rendering" data-i18n-aria="advanced.postcheck.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_fisheye_correction" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.fisheye.label">Correzione Fish-eye</span>
-                        <button type="button" class="help-btn" data-help="Compensa la distorsione delle telecamere grandangolari, migliorando l'accuratezza del rilevamento ai bordi dell'immagine." data-i18n-help="advanced.fisheye.help" aria-label="Aiuto: Correzione Fish-eye" data-i18n-aria="advanced.fisheye.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_motion_detection">
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.motion.label">Motion Detection</span>
-                        <button type="button" class="help-btn" data-help="Analizza solo le aree con movimento rilevato, velocizzando l'elaborazione su scene con ampie zone statiche." data-i18n-help="advanced.motion.help" aria-label="Aiuto: Motion Detection" data-i18n-aria="advanced.motion.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_subframe_interpolation">
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.interpolation.label">Interpolazione Sub-frame</span>
-                        <button type="button" class="help-btn" data-help="Genera oscuramenti intermedi tra i frame analizzati per video ad alto framerate, evitando discontinuità nell'oscuramento." data-i18n-help="advanced.interpolation.help" aria-label="Aiuto: Interpolazione Sub-frame" data-i18n-aria="advanced.interpolation.aria">?</button>
+                        <span data-i18n="review.json.normalize.label">Trasforma le aree in rettangoli</span>
+                        <button type="button" class="help-btn" data-help="" data-i18n-help="review.json.normalize.help" aria-label="Aiuto" data-i18n-aria="review.json.normalize.aria">?</button>
                     </label>
                 </div>
+            </section>
+        </fieldset>
 
-                <hr class="divider">
-
-                <div class="toggle-group">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_debug_video" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.debug.label">Genera video debug</span>
-                        <button type="button" class="help-btn" data-help="Produce un video aggiuntivo con bounding box, ID di tracking e confidenze visibili per verificare la qualità del rilevamento." data-i18n-help="advanced.debug.help" aria-label="Aiuto: Video debug" data-i18n-aria="advanced.debug.aria">?</button>
-                    </label>
-                    <label class="toggle-label">
-                        <input type="checkbox" id="enable_confidence_report" checked>
-                        <span class="toggle-switch"></span>
-                        <span data-i18n="advanced.report.label">Genera report CSV</span>
-                        <button type="button" class="help-btn" data-help="Crea un file CSV con statistiche dettagliate: confidenze per frame, numero di persone rilevate, aree coperte." data-i18n-help="advanced.report.help" aria-label="Aiuto: Report CSV" data-i18n-aria="advanced.report.aria">?</button>
-                    </label>
-                </div>
-            </div>
-        </section>
-
-        <!-- Review JSON -->
-        <section class="card">
-            <h2 class="card-title collapsible collapsed" data-target="section-review" tabindex="0" role="button" aria-expanded="false">
-                <span data-i18n="review.json.title">Revisione da JSON</span>
-                <span class="chevron" aria-hidden="true">&#9662;</span>
-            </h2>
-            <div id="section-review" class="card-body collapsed-body">
-                <p class="hint" data-i18n="review.json.hint">Carica un file JSON di annotazioni esistente per riprendere l'elaborazione.</p>
-                <div class="form-group">
-                    <input type="file" id="jsonFileInput" accept=".json">
-                </div>
-                <div id="jsonFileInfo" class="file-info hidden">
-                    <span id="jsonFileName" class="file-name"></span>
-                    <button id="removeJsonFile" class="btn-icon" title="Rimuovi" aria-label="Rimuovi file JSON" data-i18n-title="review.json.remove.title" data-i18n-aria="review.json.remove.aria">&times;</button>
-                </div>
-                <label class="toggle-label">
-                    <input type="checkbox" id="normalize">
-                    <span class="toggle-switch"></span>
-                    <span data-i18n="review.json.normalize.label">Normalizza poligoni in rettangoli</span>
-                    <button type="button" class="help-btn" data-help="Converte eventuali poligoni irregolari nelle annotazioni JSON in rettangoli regolari (bounding box) per un oscuramento uniforme." data-i18n-help="review.json.normalize.help" aria-label="Aiuto: Normalizza poligoni" data-i18n-aria="review.json.normalize.aria">?</button>
-                </label>
-            </div>
-        </section>
+        <p id="lockMsg" class="lock-msg hidden" data-i18n="settings.locked">Impostazioni bloccate durante l'elaborazione. Per cambiarle, interrompi e riavvia.</p>
 
         <!-- Pulsanti Azione -->
         <div class="actions">
-            <button id="btnStart" class="btn btn-primary" disabled data-i18n="action.start">Avvia Elaborazione</button>
-            <button id="btnStop" class="btn btn-danger" disabled data-i18n="action.stop">Interrompi</button>
+            <button id="btnStart" class="btn btn-primary" type="button" disabled data-i18n="action.start">Avvia l'anonimizzazione</button>
+            <button id="btnStop" class="btn btn-danger hidden" type="button" data-i18n="action.stop">Interrompi</button>
+            <p id="startHint" class="actions-hint" data-i18n="action.start.hint">Carica un video per iniziare</p>
+            <div id="stopConfirm" class="stop-confirm hidden" role="alertdialog" aria-labelledby="stopConfirmText">
+                <p id="stopConfirmText" data-i18n="action.stop.confirm">Interrompere l'elaborazione? Il lavoro fatto finora andrà perso.</p>
+                <div class="stop-confirm-actions">
+                    <button id="btnStopCancel" class="btn btn-ghost btn-small" type="button" data-i18n="action.stop.cancel">Continua</button>
+                    <button id="btnStopConfirm" class="btn btn-danger btn-small" type="button" data-i18n="action.stop.yes">Sì, interrompi</button>
+                </div>
+            </div>
         </div>
 
     </aside>
@@ -275,87 +321,116 @@
             <div id="phases" class="phases" role="group" aria-label="Fasi di elaborazione" data-i18n-aria="progress.aria">
                 <div class="phase" data-phase="1" aria-current="false">
                     <span class="phase-num">1</span>
-                    <span class="phase-label" data-i18n="phase.detection">Rilevamento</span>
+                    <span class="phase-label" data-i18n="phase.detection">Ricerca persone</span>
+                    <span class="phase-skip" data-i18n="phase.skipped">saltata</span>
                 </div>
                 <div class="phase" data-phase="2" aria-current="false">
                     <span class="phase-num">2</span>
-                    <span class="phase-label" data-i18n="phase.review">Revisione</span>
+                    <span class="phase-label" data-i18n="phase.check">Controllo automatico</span>
+                    <span class="phase-skip" data-i18n="phase.skipped">saltata</span>
                 </div>
                 <div class="phase" data-phase="3" aria-current="false">
                     <span class="phase-num">3</span>
-                    <span class="phase-label" data-i18n="phase.rendering">Rendering</span>
+                    <span class="phase-label" data-i18n="phase.review">Revisione</span>
+                    <span class="phase-skip" data-i18n="phase.skipped">saltata</span>
                 </div>
                 <div class="phase" data-phase="4" aria-current="false">
                     <span class="phase-num">4</span>
-                    <span class="phase-label" data-i18n="phase.verification">Verifica</span>
+                    <span class="phase-label" data-i18n="phase.rendering">Creazione video</span>
+                    <span class="phase-skip" data-i18n="phase.skipped">saltata</span>
                 </div>
                 <div class="phase" data-phase="5" aria-current="false">
                     <span class="phase-num">5</span>
-                    <span class="phase-label" data-i18n="phase.audio">Audio</span>
+                    <span class="phase-label" data-i18n="phase.finalize">Finalizzazione</span>
+                    <span class="phase-skip" data-i18n="phase.skipped">saltata</span>
                 </div>
             </div>
 
             <!-- Barra Progresso -->
             <div id="progressContainer" class="progress-container hidden">
-                <div class="progress-header">
-                    <span id="progressLabel" class="progress-label"></span>
-                    <span id="progressPercent" class="progress-percent">0%</span>
-                </div>
+                <p id="progressLabel" class="progress-label"></p>
                 <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso elaborazione" data-i18n-aria="progress.bar.aria">
                     <div id="progressFill" class="progress-fill"></div>
                 </div>
                 <div class="progress-footer">
-                    <span id="progressDetail"></span>
-                    <span id="progressRate"></span>
+                    <span id="progressEta"></span>
+                    <span id="progressPercent" class="progress-percent">0%</span>
                 </div>
+                <p id="progressDetail" class="progress-detail"></p>
             </div>
+        </div>
+
+        <!-- Guida in 3 passi -->
+        <section id="welcomeCard" class="card welcome" aria-labelledby="welcomeTitle">
+            <h2 id="welcomeTitle" class="card-title" data-i18n="welcome.title">Come funziona</h2>
+            <ol class="welcome-steps">
+                <li><span class="step-badge" aria-hidden="true">1</span><strong data-i18n="welcome.s1.title">Carica il video</strong><span data-i18n="welcome.s1.text">Trascinalo nel riquadro a sinistra o clicca per sceglierlo.</span></li>
+                <li><span class="step-badge" aria-hidden="true">2</span><strong data-i18n="welcome.s2.title">Scegli come oscurare</strong><span data-i18n="welcome.s2.text">Mosaico o sfocatura. I valori consigliati sono già impostati.</span></li>
+                <li><span class="step-badge" aria-hidden="true">3</span><strong data-i18n="welcome.s3.title">Avvia e scarica</strong><span data-i18n="welcome.s3.text">Segui l'avanzamento qui, poi scarica il video con le persone coperte.</span></li>
+            </ol>
+            <p class="welcome-foot" data-i18n="welcome.foot">I dettagli tecnici dell'elaborazione restano disponibili più in basso, in "Dettagli tecnici".</p>
+        </section>
+
+        <!-- Risultati -->
+        <div id="resultsCard" class="card hidden">
+            <div id="results" class="results"></div>
         </div>
 
         <!-- Review Editor -->
         <div id="reviewCard" class="card card-review hidden">
-            <h2 class="card-title" data-i18n="review.title">Revisione Manuale</h2>
+            <h2 class="card-title" data-i18n="review.title">Revisione manuale</h2>
+            <p class="review-intro" data-i18n="review.intro">Controlla che ogni persona sia coperta. Se ne manca una, disegna un'area attorno a lei; se un'area copre qualcosa che non è una persona, eliminala. Quando hai finito, crea il video.</p>
             <div class="review-info-bar">
-                <span id="frameLabel">Frame 0 / 0</span>
-                <span id="polyCount">0 poligoni</span>
-                <span id="modeIndicator" class="review-mode-normal">[NORM]</span>
+                <span id="frameLabel">00:00 / 00:00</span>
+                <span id="polyCount">0</span>
+                <span id="modeIndicator" class="review-mode-normal"></span>
+            </div>
+            <div class="review-legend">
+                <span><i class="legend-swatch legend-swatch--auto" aria-hidden="true"></i><span data-i18n="review.legend.auto">Trovate in automatico</span></span>
+                <span><i class="legend-swatch legend-swatch--manual" aria-hidden="true"></i><span data-i18n="review.legend.manual">Aggiunte da te</span></span>
+            </div>
+            <div class="review-tools" role="toolbar" aria-label="Strumenti di revisione" data-i18n-aria="review.tools.aria">
+                <button id="toolDraw" class="tool-btn tool-btn--active" type="button" aria-pressed="true" data-i18n="review.tool.draw">Disegna area</button>
+                <button id="toolClose" class="tool-btn" type="button" data-i18n="review.tool.close">Chiudi area</button>
+                <button id="toolDelete" class="tool-btn" type="button" aria-pressed="false" data-i18n="review.tool.delete">Elimina area</button>
+                <button id="toolUndo" class="tool-btn" type="button" data-i18n="review.tool.undo">Annulla punto</button>
             </div>
             <div class="review-canvas-container">
                 <canvas id="reviewCanvas"></canvas>
             </div>
             <div class="review-controls">
-                <button id="btnPrevFrame" class="btn btn-ghost btn-small" aria-label="Frame precedente" data-i18n-aria="review.prev.aria" data-i18n="review.prev">&larr; Prec</button>
-                <input type="range" id="frameSlider" min="0" max="0" value="0" aria-label="Navigazione frame">
-                <button id="btnNextFrame" class="btn btn-ghost btn-small" aria-label="Frame successivo" data-i18n-aria="review.next.aria" data-i18n="review.next">Succ &rarr;</button>
+                <button id="btnPrevFrame" class="btn btn-ghost btn-small" type="button" aria-label="Frame precedente" data-i18n-aria="review.prev.aria" data-i18n="review.prev">&larr; Prec</button>
+                <input type="range" id="frameSlider" min="0" max="0" value="0" aria-label="Navigazione frame" data-i18n-aria="review.slider.aria">
+                <button id="btnNextFrame" class="btn btn-ghost btn-small" type="button" aria-label="Frame successivo" data-i18n-aria="review.next.aria" data-i18n="review.next">Succ &rarr;</button>
+            </div>
+            <div class="review-jump">
+                <button id="btnNextPeople" class="btn btn-ghost btn-small" type="button" data-i18n="review.next_people">Vai al prossimo frame con persone</button>
             </div>
             <div class="review-help">
                 <kbd>Click</kbd> <span data-i18n="review.help.click">aggiungi punto</span> &middot;
-                <kbd>Enter</kbd> <span data-i18n="review.help.enter">chiudi poligono</span> &middot;
+                <kbd>Enter</kbd> <span data-i18n="review.help.enter">chiudi area</span> &middot;
                 <kbd>D</kbd> <span data-i18n="review.help.d">elimina</span> &middot;
                 <kbd>Esc</kbd> <span data-i18n="review.help.esc">annulla</span> &middot;
                 <kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>Space</kbd> <span data-i18n="review.help.nav">naviga</span> &middot;
-                <kbd>Ctrl+Z</kbd> <span data-i18n="review.help.undo">undo</span>
+                <kbd>Ctrl+Z</kbd> <span data-i18n="review.help.undo">annulla punto</span>
             </div>
-            <button id="btnConfirmReview" class="btn btn-primary btn-confirm-review" data-i18n="review.confirm">
-                Conferma e Continua
-            </button>
+            <button id="btnConfirmReview" class="btn btn-primary btn-confirm-review" type="button" data-i18n="review.confirm">Ho finito: crea il video</button>
+            <p id="reviewSummary" class="review-summary"></p>
         </div>
 
-        <!-- Console Output -->
-        <div class="card card-grow">
-            <h2 class="card-title">
-                <span data-i18n="console.title">Console</span>
-                <button id="btnClearConsole" class="btn-icon btn-small" title="Pulisci console" aria-label="Pulisci console" data-i18n-title="console.clear.title" data-i18n-aria="console.clear.aria">&#128465;</button>
-            </h2>
+        <!-- Dettagli tecnici (console) -->
+        <details id="consoleDetails" class="card console-details">
+            <summary class="card-title">
+                <span data-i18n="console.title">Dettagli tecnici (log)</span>
+                <span id="consoleCount" class="console-count"></span>
+            </summary>
+            <div class="console-toolbar">
+                <button id="btnClearConsole" class="btn btn-ghost btn-small" type="button" data-i18n="console.clear">Svuota</button>
+            </div>
             <div id="console" class="console" role="log" aria-live="off" aria-label="Log di elaborazione" data-i18n-aria="console.log.aria">
                 <div class="console-line console-info" data-i18n="console.waiting">In attesa di avvio...</div>
             </div>
-        </div>
-
-        <!-- Risultati -->
-        <div id="resultsCard" class="card hidden">
-            <h2 class="card-title" data-i18n="results.title">Risultati</h2>
-            <div id="results" class="results"></div>
-        </div>
+        </details>
 
     </section>
 
@@ -365,7 +440,14 @@
     Built by <a href="https://andreabonn.github.io/" target="_blank" rel="noopener noreferrer">Andrea Bonacci</a>
 </footer>
 
+<script src="/static/js/i18n-text-setup.js"></script>
+<script src="/static/js/i18n-text-run.js"></script>
 <script src="/static/js/i18n.js"></script>
+<script src="/static/js/ui-helpers.js"></script>
+<script src="/static/js/help-tooltip.js"></script>
+<script src="/static/js/settings-ui.js"></script>
+<script src="/static/js/progress-view.js"></script>
+<script src="/static/js/results-view.js"></script>
 <script src="/static/js/review-editor.js"></script>
 <script src="/static/js/app.js"></script>
 </body>

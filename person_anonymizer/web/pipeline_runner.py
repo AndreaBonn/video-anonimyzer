@@ -4,10 +4,11 @@ Crea PipelineConfig dai parametri web, cattura stdout/tqdm, invia eventi SSE.
 """
 
 import threading
+from dataclasses import asdict
 from pathlib import Path
 
 from person_anonymizer.config import PipelineConfig
-from person_anonymizer.models import PipelineContext, PipelineError
+from person_anonymizer.models import PipelineContext, PipelineError, PipelineStoppedError
 from person_anonymizer.web.config_validator import (
     _ALLOWED_FIELDS,
     _BOOL_FIELDS,  # noqa: F401
@@ -91,6 +92,8 @@ class PipelineRunner:
             if job_id and job_id != self._current_job_id:
                 return False
             self._stop_event.set()
+        # Il thread può essere fermo in attesa della revisione manuale: va sbloccato
+        self.review_state.cancel()
         return True
 
     def get_status(self) -> dict:
@@ -181,9 +184,10 @@ class PipelineRunner:
         stdout_capture.install()
 
         self._sse.emit(job_id, "started", {"job_id": job_id})
+        completed = False
 
         try:
-            run_pipeline(ctx, config=config)
+            post_check = run_pipeline(ctx, config=config)
 
             # Successo: elenca file di output
             outputs = []
@@ -202,8 +206,14 @@ class PipelineRunner:
                 {
                     "job_id": job_id,
                     "outputs": outputs,
+                    "post_check": asdict(post_check),
                 },
             )
+            completed = True
+
+        except PipelineStoppedError:
+            # The "stopped" event is emitted once, in the finally block below
+            _log.info("Pipeline stopped by user for job %s", job_id)
 
         except PipelineError as e:
             self._sse.emit(
@@ -231,7 +241,8 @@ class PipelineRunner:
             stdout_capture.uninstall()
             tqdm_capture.uninstall()
 
-            if self._stop_event.is_set():
+            # A stop that arrives after the last check must not follow "completed"
+            if self._stop_event.is_set() and not completed:
                 self._sse.emit(
                     job_id,
                     "stopped",

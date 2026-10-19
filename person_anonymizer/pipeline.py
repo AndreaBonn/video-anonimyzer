@@ -1,5 +1,6 @@
 """Pipeline principale di anonimizzazione — orchestratore."""
 
+import logging
 import os
 import shutil
 import time
@@ -15,6 +16,8 @@ from .models import (
     PipelineContext,
     PipelineInputError,
     PipelineResult,
+    PipelineStoppedError,
+    PostCheckOutcome,
     VideoMeta,
 )
 from .output import load_annotations_from_json, save_outputs
@@ -23,10 +26,31 @@ from .postprocessing import normalize_annotations
 from .preprocessing import build_undistortion_maps, should_interpolate
 from .rendering import render_video
 
+_log = logging.getLogger(__name__)
+
 __all__ = ["run_pipeline"]
 
 
-def run_pipeline(ctx: PipelineContext, config=None):
+def _raise_if_stopped(stop_event, temp_paths: tuple[str, ...]) -> None:
+    """Interrompe la pipeline fra una fase e l'altra se l'utente lo ha chiesto.
+
+    Le fasi escono dal proprio loop con risultati parziali: proseguire
+    salverebbe un video anonimizzato solo in parte. Per lo stesso motivo
+    vengono rimossi i render intermedi già scritti su disco.
+    """
+    if stop_event is None or not stop_event.is_set():
+        return
+    for path in temp_paths:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            # The stop must still be reported as a stop, not as a generic error
+            _log.warning("Impossibile rimuovere il file temporaneo %s", path, exc_info=True)
+    raise PipelineStoppedError("Pipeline interrotta dall'utente")
+
+
+def run_pipeline(ctx: PipelineContext, config=None) -> PostCheckOutcome:
     """Esegue la pipeline completa di anonimizzazione.
 
     Parameters
@@ -36,10 +60,17 @@ def run_pipeline(ctx: PipelineContext, config=None):
     config : PipelineConfig | None
         Configurazione della pipeline. Se None, usa i default.
 
+    Returns
+    -------
+    PostCheckOutcome
+        Esito della verifica automatica post-render (fase 2).
+
     Raises
     ------
     PipelineInputError
         Se il file di input non esiste o non è supportato.
+    PipelineStoppedError
+        Se ``ctx.stop_event`` viene impostato durante l'elaborazione.
     PipelineError
         Per errori generici durante l'elaborazione.
     """
@@ -215,11 +246,18 @@ def run_pipeline(ctx: PipelineContext, config=None):
             sam3_refiner=backend.sam3_refiner,
         )
 
+    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
+
     # ============================================
     # FASE 2 — AUTO REFINEMENT LOOP
     # ============================================
     if not review_json:
-        annotations, actual_refinement_passes, refinement_annotations_added = run_refinement_loop(
+        (
+            annotations,
+            actual_refinement_passes,
+            refinement_annotations_added,
+            post_check,
+        ) = run_refinement_loop(
             input_path,
             annotations,
             model,
@@ -235,6 +273,9 @@ def run_pipeline(ctx: PipelineContext, config=None):
         )
     else:
         actual_refinement_passes, refinement_annotations_added = 0, 0
+        post_check = PostCheckOutcome(status="skipped")
+
+    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
 
     # ============================================
     # FASE 3 — REVISIONE MANUALE
@@ -254,6 +295,8 @@ def run_pipeline(ctx: PipelineContext, config=None):
     else:
         print("\n[FASE 3/5] Revisione manuale — saltata (modalità auto)")
 
+    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
+
     # ============================================
     # FASE 4 — RENDERING FINALE
     # ============================================
@@ -272,6 +315,8 @@ def run_pipeline(ctx: PipelineContext, config=None):
         desc="Rendering finale",
         stop_event=stop_event,
     )
+
+    _raise_if_stopped(stop_event, (temp_video_path, temp_debug_path))
 
     # ============================================
     # FASE 5 — POST-PROCESSING
@@ -312,3 +357,4 @@ def run_pipeline(ctx: PipelineContext, config=None):
     if mode == "manual" or ctx.normalize:
         print(f"  Annotazioni:  {Path(paths.json).name}")
     print()
+    return post_check

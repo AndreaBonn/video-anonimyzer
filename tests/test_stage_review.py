@@ -307,3 +307,57 @@ class TestRunManualReviewStageWeb:
 @pytest.fixture
 def fisheye():
     return FisheyeContext()
+
+
+def test_web_review_stop_before_setup_does_not_block():
+    """A stop that lands between the last stop check and setup() must not hang the thread."""
+    import threading
+
+    from person_anonymizer.stage_review import run_manual_review_stage
+    from person_anonymizer.web.review_state import ReviewState
+
+    state = ReviewState()
+    stop = threading.Event()
+    stop.set()
+    state.cancel()  # what PipelineRunner.stop() did; setup() will clear it
+    ctx = _make_ctx(review_state=state, sse_manager=MagicMock(), job_id="aabbccddeeff",
+                    stop_event=stop)
+    annotations = _make_annotations()
+
+    t = threading.Thread(
+        target=run_manual_review_stage,
+        kwargs=dict(ctx=ctx, input_path="missing.mp4", annotations=annotations,
+                    config=PipelineConfig(), total_frames=3, fps=25.0, frame_w=640,
+                    frame_h=480, fisheye=FisheyeContext()),
+        daemon=True,
+    )
+    t.start()
+    t.join(timeout=3.0)
+
+    assert not t.is_alive()
+
+
+def test_web_review_without_stop_still_waits_for_user():
+    import threading
+
+    from person_anonymizer.stage_review import run_manual_review_stage
+    from person_anonymizer.web.review_state import ReviewState
+
+    state = ReviewState()
+    ctx = _make_ctx(review_state=state, sse_manager=MagicMock(), job_id="aabbccddeeff",
+                    stop_event=threading.Event())
+    t = threading.Thread(
+        target=run_manual_review_stage,
+        kwargs=dict(ctx=ctx, input_path="missing.mp4", annotations=_make_annotations(),
+                    config=PipelineConfig(), total_frames=3, fps=25.0, frame_w=640,
+                    frame_h=480, fisheye=FisheyeContext()),
+        daemon=True,
+    )
+    t.start()
+    t.join(timeout=0.5)
+    waiting = t.is_alive()
+    state.cancel()
+    t.join(timeout=3.0)
+
+    assert waiting
+    assert not t.is_alive()

@@ -43,7 +43,7 @@ class TestRunRefinementLoopDisabled:
 
         # Act
         from person_anonymizer.stage_refinement import run_refinement_loop
-        result_ann, passes, added = run_refinement_loop(
+        result_ann, passes, added, _outcome = run_refinement_loop(
             input_path="input.mp4",
             annotations=annotations,
             model=MagicMock(),
@@ -99,7 +99,7 @@ class TestRunRefinementLoopNoAlerts:
                    return_value=[]):
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            _, passes, added = run_refinement_loop(
+            _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -162,7 +162,7 @@ class TestRunRefinementLoopWithAlerts:
                    return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            result_ann, passes, added = run_refinement_loop(
+            result_ann, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -209,7 +209,7 @@ class TestRunRefinementLoopWithAlerts:
                    return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            _, passes, added = run_refinement_loop(
+            _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -238,7 +238,7 @@ class TestRunRefinementLoopWithAlerts:
                    return_value=([], 1, 0)):  # tutti artefatti, 0 genuini
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            _, passes, added = run_refinement_loop(
+            _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -270,7 +270,7 @@ class TestRunRefinementLoopWithAlerts:
                    return_value=[(50, 50), (150, 50), (150, 200), (50, 200)]):
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            _, passes, _ = run_refinement_loop(
+            _, passes, _, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -302,7 +302,7 @@ class TestRunRefinementLoopWithAlerts:
                    return_value=[(10, 10), (100, 10), (100, 200), (10, 200)]):
 
             from person_anonymizer.stage_refinement import run_refinement_loop
-            result_ann, _, _ = run_refinement_loop(
+            result_ann, _, _, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),
@@ -332,7 +332,7 @@ class TestRunRefinementLoopStopEvent:
 
         with patch("person_anonymizer.stage_refinement.render_video") as mock_render:
             from person_anonymizer.stage_refinement import run_refinement_loop
-            _, passes, added = run_refinement_loop(
+            _, passes, added, _outcome = run_refinement_loop(
                 input_path="input.mp4",
                 annotations=annotations,
                 model=MagicMock(),

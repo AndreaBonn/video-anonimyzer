@@ -40,6 +40,7 @@ def add_security_headers(response):
         "style-src 'self' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: blob:; "
+        "media-src 'self' blob:; "
         "connect-src 'self'"
     )
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"

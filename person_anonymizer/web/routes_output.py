@@ -2,8 +2,9 @@
 
 from dataclasses import asdict
 
-from flask import Blueprint, current_app, jsonify, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 
+from person_anonymizer.sam3_backend import check_sam3_available
 from person_anonymizer.web.extensions import limiter, validate_job_id
 
 output_bp = Blueprint("output", __name__)
@@ -22,6 +23,13 @@ def config_defaults():
         if k in _ALLOWED_FIELDS:
             defaults[k] = list(v) if isinstance(v, tuple) else v
     return jsonify(defaults)
+
+
+@output_bp.route("/api/capabilities")
+@limiter.limit("60 per minute")
+def capabilities():
+    """Report which optional detection backends are installed."""
+    return jsonify({"sam3": check_sam3_available()})
 
 
 @output_bp.route("/api/download/<job_id>/<file_type>")
@@ -47,7 +55,9 @@ def download_file(job_id, file_type):
 
     for f in job_out.iterdir():
         if f.name.endswith(suffix):
-            resp = send_file(str(f), as_attachment=True)
+            # Inline only for the anonymized video, so the browser can preview it
+            inline = file_type == "video" and request.args.get("inline") == "1"
+            resp = send_file(str(f), as_attachment=not inline)
             resp.headers["Cache-Control"] = "no-store"
             return resp
 

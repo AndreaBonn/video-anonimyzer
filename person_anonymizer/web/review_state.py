@@ -91,6 +91,13 @@ class ReviewState:
                 self._cap = None
             return result
 
+    def cancel(self):
+        """Sblocca ``wait_for_completion`` senza modifiche (stop durante la revisione).
+
+        La pipeline controlla lo stop subito dopo la revisione e si interrompe.
+        """
+        self._event.set()
+
     def complete(self, annotations):
         """Chiamato da Flask quando l'utente conferma la review.
 

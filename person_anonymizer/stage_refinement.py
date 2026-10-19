@@ -1,6 +1,7 @@
 """Fase di auto-refinement: loop di ri-rendering e verifica post-render."""
 
 from .anonymization import box_to_polygon, resolve_intensity
+from .models import PostCheckOutcome
 from .postprocessing import filter_artifact_detections, run_post_render_check
 from .rendering import render_video
 
@@ -53,13 +54,14 @@ def run_refinement_loop(
     Returns
     -------
     tuple
-        (annotations, actual_passes, annotations_added)
+        (annotations, actual_passes, annotations_added, PostCheckOutcome)
     """
     if not config.enable_post_render_check:
         print("\n[FASE 2/5] Auto refinement — saltato (verifica disabilitata)")
-        return annotations, 0, 0
+        return annotations, 0, 0, PostCheckOutcome(status="skipped")
 
     actual_passes, annotations_added = 0, 0
+    outcome = PostCheckOutcome(status="skipped")
     for pass_num in range(1, config.max_refinement_passes + 1):
         if stop_event is not None and stop_event.is_set():
             print("\n  Pipeline interrotta dall'utente.")
@@ -91,6 +93,7 @@ def run_refinement_loop(
 
         if not alert_frames:
             print("\n  Nessun rilevamento residuo — rendering OK.")
+            outcome = PostCheckOutcome(status="clean")
             break
 
         genuine_alerts, n_artifacts, n_genuine = filter_artifact_detections(
@@ -102,9 +105,11 @@ def run_refinement_loop(
 
         if not genuine_alerts:
             print("  Tutti i rilevamenti sono artefatti della pixelazione — rendering OK.")
+            outcome = PostCheckOutcome(status="clean")
             break
 
         if pass_num == config.max_refinement_passes:
+            outcome = PostCheckOutcome(status="residual", residual_frames=len(genuine_alerts))
             print(f"\n  Raggiunto limite di {config.max_refinement_passes} pass.")
             print(f"  Residui genuini rimasti in {len(genuine_alerts)} frame:")
             for fidx, boxes in genuine_alerts:
@@ -140,4 +145,4 @@ def run_refinement_loop(
         annotations_added += added_this_pass
         print(f"\n  Aggiunte {added_this_pass} annotazioni — ri-rendering in corso...")
 
-    return annotations, actual_passes, annotations_added
+    return annotations, actual_passes, annotations_added, outcome

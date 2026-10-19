@@ -70,6 +70,9 @@ def run_manual_review_stage(
             fidx: {"auto": list(d.get("auto", [])), "manual": list(d.get("manual", []))}
             for fidx, d in annotations.items()
         }
+        # Uno stop arrivato prima di setup() ha già chiamato cancel(), che setup() ha azzerato
+        if ctx.stop_event is not None and ctx.stop_event.is_set():
+            web_review_state.cancel()
         annotations = web_review_state.wait_for_completion()
         review_stats = compute_review_stats(original, annotations, total_frames)
         pct = (

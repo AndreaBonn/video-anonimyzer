@@ -24,7 +24,8 @@
     /* Text */
     --text: #e6edf3;
     --text-sec: #8b949e;
-    --text-tertiary: #484f58;
+    --text-tertiary: #848d97;
+    --on-accent: #0d1117;
 
     /* Semantic */
     --success: #3fb950;
@@ -145,7 +146,7 @@ body {
 }
 .lang-btn--active {
     background: var(--accent);
-    color: #0d1117;
+    color: var(--on-accent);
     cursor: default;
 }
 .lang-btn:focus-visible {
@@ -499,7 +500,7 @@ input[type="range"]::-moz-range-thumb {
 
 .btn-primary {
     background: var(--accent);
-    color: #0d1117;
+    color: var(--on-accent);
 }
 .btn-primary:hover:not(:disabled) {
     background: var(--accent-hover);
@@ -644,7 +645,7 @@ input[type="range"]::-moz-range-thumb {
 .phase.active .phase-num {
     background: var(--accent);
     border-color: var(--accent);
-    color: #0d1117;
+    color: var(--on-accent);
     animation: pulse-phase 2s ease-in-out infinite;
 }
 .phase.active .phase-label { color: var(--text); }
@@ -666,8 +667,8 @@ input[type="range"]::-moz-range-thumb {
     display: block;
     width: 8px;
     height: 5px;
-    border-left: 2px solid #0d1117;
-    border-bottom: 2px solid #0d1117;
+    border-left: 2px solid var(--on-accent);
+    border-bottom: 2px solid var(--on-accent);
     transform: rotate(-45deg);
     position: absolute;
     top: 7px;
@@ -1087,10 +1088,23 @@ input[type="range"]::-moz-range-thumb {
         grid-template-columns: 1fr;
         grid-template-rows: auto 1fr;
     }
+    .layout {
+        overflow: visible;
+    }
+    .panel {
+        overflow: visible;
+    }
     .panel-config {
         border-right: none;
         border-bottom: 1px solid var(--border);
-        max-height: 50vh;
+    }
+    .actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 200;
+        background: var(--bg-elevated);
+        padding: var(--sp-3) 0;
+        border-top: 1px solid var(--border);
     }
     .phases {
         overflow-x: auto;

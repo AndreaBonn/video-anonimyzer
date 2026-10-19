@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from person_anonymizer.config import PipelineConfig
-from person_anonymizer.models import PipelineContext, PipelineInputError
+from person_anonymizer.models import (
+    PipelineContext,
+    PipelineInputError,
+    PipelineStoppedError,
+    PostCheckOutcome,
+)
 
 
 def _make_ctx(tmp_path, **kwargs):
@@ -136,7 +141,7 @@ class TestRunPipelineResolutionLabels:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})), \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs"):
 
@@ -165,7 +170,7 @@ class TestRunPipelineAutoMode:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})) as mock_det, \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 1, 0)) as mock_ref, \
+                   return_value=(annotations, 1, 0, PostCheckOutcome("clean"))) as mock_ref, \
              patch("person_anonymizer.pipeline.run_manual_review_stage") as mock_rev, \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs"):
@@ -231,7 +236,7 @@ class TestRunPipelineManualMode:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})), \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.run_manual_review_stage",
                    return_value=(annotations, review_stats)) as mock_rev, \
              patch("person_anonymizer.pipeline.render_video"), \
@@ -336,7 +341,7 @@ class TestRunPipelineSam3Backend:
              patch("person_anonymizer.pipeline.load_detection_backend") as mock_backend, \
              patch("person_anonymizer.pipeline.run_detection_loop") as mock_det, \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs"):
 
@@ -369,7 +374,7 @@ class TestRunPipelineStopEvent:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})) as mock_det, \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs"):
 
@@ -399,7 +404,7 @@ class TestRunPipelineStopEvent:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})), \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs") as mock_save:
 
@@ -433,7 +438,7 @@ class TestRunPipelineFfmpegAbsent:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})), \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs") as mock_save:
 
@@ -467,7 +472,7 @@ class TestRunPipelineFisheyeCorrection:
              patch("person_anonymizer.pipeline.run_detection_loop",
                    return_value=(annotations, {}, {})) as mock_det, \
              patch("person_anonymizer.pipeline.run_refinement_loop",
-                   return_value=(annotations, 0, 0)), \
+                   return_value=(annotations, 0, 0, PostCheckOutcome(status="clean"))), \
              patch("person_anonymizer.pipeline.render_video"), \
              patch("person_anonymizer.pipeline.save_outputs"):
 
@@ -484,3 +489,81 @@ class TestRunPipelineFisheyeCorrection:
         call_args = mock_det.call_args
         fisheye_arg = call_args.args[4]
         assert fisheye_arg.enabled is False
+
+
+class TestRunPipelineStoppedByUser:
+    """A stop request must never produce a saved (partially anonymized) output."""
+
+    def _run_with_stop(self, tmp_path, stop_after_detection):
+        stop = threading.Event()
+        ctx = _make_ctx(tmp_path, mode="auto", stop_event=stop)
+        annotations = {}
+
+        def detection(*_a, **_kw):
+            if stop_after_detection:
+                stop.set()
+            return annotations, {}, {}
+
+        with patch("person_anonymizer.pipeline.cv2.VideoCapture", return_value=_mock_cap(5)), \
+             patch("person_anonymizer.pipeline.shutil.which", return_value=None), \
+             patch("person_anonymizer.pipeline.load_detection_backend") as mock_backend, \
+             patch("person_anonymizer.pipeline.run_detection_loop", side_effect=detection), \
+             patch("person_anonymizer.pipeline.run_refinement_loop",
+                   return_value=(annotations, 0, 0, PostCheckOutcome("clean"))), \
+             patch("person_anonymizer.pipeline.render_video"), \
+             patch("person_anonymizer.pipeline.save_outputs") as mock_save:
+            backend = MagicMock()
+            backend.sam3_refiner = None
+            backend.sam3_video_detector = None
+            mock_backend.return_value = backend
+
+            from person_anonymizer.pipeline import run_pipeline
+            try:
+                run_pipeline(ctx)
+                raised = None
+            except PipelineStoppedError as e:
+                raised = e
+        return raised, mock_save
+
+    def test_stop_during_detection_raises_and_saves_nothing(self, tmp_path):
+        raised, mock_save = self._run_with_stop(tmp_path, stop_after_detection=True)
+
+        assert isinstance(raised, PipelineStoppedError)
+        mock_save.assert_not_called()
+
+    def test_without_stop_outputs_are_saved(self, tmp_path):
+        raised, mock_save = self._run_with_stop(tmp_path, stop_after_detection=False)
+
+        assert raised is None
+        mock_save.assert_called_once()
+
+
+def test_stop_removes_intermediate_renders(tmp_path):
+    stop = threading.Event()
+    ctx = _make_ctx(tmp_path, mode="auto", stop_event=stop)
+    temps = [tmp_path / "test_temp_noaudio.avi", tmp_path / "test_temp_debug.avi"]
+
+    def refinement(annotations, *_a, **_kw):
+        for t in temps:
+            t.write_bytes(b"partial")
+        stop.set()
+        return annotations, 1, 0, PostCheckOutcome("clean")
+
+    with patch("person_anonymizer.pipeline.cv2.VideoCapture", return_value=_mock_cap(5)), \
+         patch("person_anonymizer.pipeline.shutil.which", return_value=None), \
+         patch("person_anonymizer.pipeline.load_detection_backend") as mock_backend, \
+         patch("person_anonymizer.pipeline.run_detection_loop", return_value=({}, {}, {})), \
+         patch("person_anonymizer.pipeline.run_refinement_loop",
+               side_effect=lambda inp, ann, *a, **k: refinement(ann)), \
+         patch("person_anonymizer.pipeline.render_video"), \
+         patch("person_anonymizer.pipeline.save_outputs"):
+        backend = MagicMock()
+        backend.sam3_refiner = None
+        backend.sam3_video_detector = None
+        mock_backend.return_value = backend
+
+        from person_anonymizer.pipeline import run_pipeline
+        with pytest.raises(PipelineStoppedError):
+            run_pipeline(ctx)
+
+    assert [t.exists() for t in temps] == [False, False]

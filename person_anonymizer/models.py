@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     import cv2
@@ -15,12 +15,29 @@ if TYPE_CHECKING:
     from .web.sse_manager import SSEManager
 
 
+@dataclass(frozen=True)
+class PostCheckOutcome:
+    """Result of the automatic post-render check (phase 2).
+
+    ``clean``: no uncovered person found; ``residual``: people still found in
+    ``residual_frames`` frames after the last pass; ``skipped``: check disabled,
+    interrupted or not run (annotations loaded from JSON).
+    """
+
+    status: Literal["clean", "residual", "skipped"]
+    residual_frames: int = 0
+
+
 class PipelineError(Exception):
     """Errore generico della pipeline."""
 
 
 class PipelineInputError(PipelineError):
     """Errore di input (file non trovato, formato non supportato, ecc.)."""
+
+
+class PipelineStoppedError(PipelineError):
+    """L'utente ha interrotto la pipeline: nessun output viene salvato."""
 
 
 @dataclass
