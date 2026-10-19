@@ -3,9 +3,7 @@ Flask web app per Person Anonymizer.
 Serve la GUI e gestisce upload, pipeline, SSE progress e download.
 """
 
-import json
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -16,11 +14,18 @@ from werkzeug.utils import secure_filename
 
 from person_anonymizer.config import SUPPORTED_EXTENSIONS
 from person_anonymizer.web.extensions import limiter, validate_job_id
+from person_anonymizer.web.job_cleanup import cleanup_old_jobs
 from person_anonymizer.web.middleware import register_middleware
 from person_anonymizer.web.pipeline_runner import PipelineRunner
 from person_anonymizer.web.routes_output import output_bp
 from person_anonymizer.web.routes_review import review_bp
 from person_anonymizer.web.sse_manager import SSEManager
+from person_anonymizer.web.sse_stream import format_sse_event, iter_sse
+from person_anonymizer.web.upload_validation import (
+    has_valid_video_signature,
+    job_file_path,
+    parse_annotations_json,
+)
 from person_anonymizer.web.video_info import read_video_info
 
 app = Flask(__name__)
@@ -47,28 +52,10 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Firme magic bytes per i formati video supportati
-_VIDEO_SIGNATURES: dict[bytes, set[str]] = {
-    b"\x00\x00\x00": {".mp4", ".m4v", ".mov"},  # ftyp container (ISO BMFF)
-    b"\x1a\x45\xdf": {".mkv", ".webm"},  # EBML header (Matroska)
-    b"RIFF": {".avi"},  # RIFF container
-}
-
-
-def _cleanup_old_jobs(max_age_seconds=3600):
-    """Rimuove job directory più vecchie di max_age_seconds."""
-    now = time.time()
-    for base_dir in (UPLOAD_DIR, OUTPUT_DIR):
-        if not base_dir.exists():
-            continue
-        for job_dir in base_dir.iterdir():
-            if job_dir.is_dir():
-                try:
-                    age = now - job_dir.stat().st_mtime
-                    if age > max_age_seconds:
-                        shutil.rmtree(job_dir, ignore_errors=True)
-                except OSError:
-                    pass
+_CLEANUP_MAX_AGE_S = 3600
+_MAX_ANNOTATIONS_BYTES = 100 * 1024 * 1024
+_SSE_MAX_DURATION_S = 7200  # 2 ore max
+_SSE_HEARTBEAT_S = 60
 
 
 def _start_cleanup_thread(interval=600):
@@ -77,7 +64,11 @@ def _start_cleanup_thread(interval=600):
     def _loop():
         while True:
             try:
-                _cleanup_old_jobs()
+                cleanup_old_jobs(
+                    base_dirs=(UPLOAD_DIR, OUTPUT_DIR),
+                    max_age_s=_CLEANUP_MAX_AGE_S,
+                    now=time.time(),
+                )
             except Exception:
                 pass
             time.sleep(interval)
@@ -152,12 +143,7 @@ def upload_video():
     # Validazione magic bytes del file video
     header = f.read(12)
     f.seek(0)
-    signature_valid = False
-    for sig, valid_exts in _VIDEO_SIGNATURES.items():
-        if header.startswith(sig) and ext in valid_exts:
-            signature_valid = True
-            break
-    if not signature_valid:
+    if not has_valid_video_signature(header, ext):
         return jsonify({"error": "Il contenuto del file non corrisponde all'estensione"}), 400
 
     job_id = uuid.uuid4().hex[:12]
@@ -210,14 +196,10 @@ def upload_json():
 
     # Leggi e valida in memoria prima di salvare (evita TOCTOU)
     content = f.read()
-    if len(content) > 100 * 1024 * 1024:  # max 100 MB
-        return jsonify({"error": "File JSON troppo grande (max 100 MB)"}), 400
     try:
-        parsed = json.loads(content)
-        if not isinstance(parsed, dict):
-            return jsonify({"error": "Il JSON deve essere un oggetto"}), 400
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return jsonify({"error": "Il file non contiene JSON valido"}), 400
+        parse_annotations_json(content, max_bytes=_MAX_ANNOTATIONS_BYTES)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     dest = job_dir / safe_name
     dest.write_bytes(content)
@@ -247,8 +229,8 @@ def start_pipeline():
     if not safe_video:
         return jsonify({"error": "video_filename non valido"}), 400
 
-    resolved = (UPLOAD_DIR / job_id / safe_video).resolve()
-    if not str(resolved).startswith(str(UPLOAD_DIR.resolve())):
+    resolved = job_file_path(UPLOAD_DIR, job_id, safe_video)
+    if resolved is None:
         return jsonify({"error": "Path non autorizzato"}), 403
     if not resolved.exists():
         return jsonify({"error": "Video non trovato"}), 404
@@ -260,8 +242,8 @@ def start_pipeline():
         safe_json = secure_filename(review_json_filename)
         if not safe_json:
             return jsonify({"error": "review_json_filename non valido"}), 400
-        resolved_json = (UPLOAD_DIR / job_id / safe_json).resolve()
-        if not str(resolved_json).startswith(str(UPLOAD_DIR.resolve())):
+        resolved_json = job_file_path(UPLOAD_DIR, job_id, safe_json)
+        if resolved_json is None:
             return jsonify({"error": "Path review_json non autorizzato"}), 403
         if not resolved_json.exists():
             return jsonify({"error": "File JSON non trovato"}), 404
@@ -287,33 +269,18 @@ def progress_stream():
         return jsonify({"error": "job_id non valido"}), 400
 
     def generate():
-        import queue as q_module
-        import time
-
-        max_duration = 7200  # 2 ore max
-        start = time.monotonic()
-
         try:
             q = sse_manager.subscribe(job_id)
         except RuntimeError:
-            yield 'event: error\ndata: {"message": "Troppi client connessi"}\n\n'
+            yield format_sse_event("error", {"message": "Troppi client connessi"})
             return
         try:
-            while True:
-                try:
-                    event = q.get(timeout=60)
-                except q_module.Empty:
-                    yield ": heartbeat\n\n"
-                    if time.monotonic() - start > max_duration:
-                        yield (
-                            "event: timeout\n"
-                            'data: {"message": "Connessione SSE scaduta dopo 2h"}\n\n'
-                        )
-                        break
-                    continue
-                if event is None:
-                    break
-                yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+            yield from iter_sse(
+                q,
+                clock=time.monotonic,
+                max_duration_s=_SSE_MAX_DURATION_S,
+                heartbeat_s=_SSE_HEARTBEAT_S,
+            )
         finally:
             sse_manager.unsubscribe(job_id, q)
 

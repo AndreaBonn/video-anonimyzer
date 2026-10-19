@@ -1330,60 +1330,6 @@ class TestConfigValidatorExtended:
 
 
 # ---------------------------------------------------------------------------
-# TestAppCleanupOldJobs — app.py _cleanup_old_jobs
-# ---------------------------------------------------------------------------
-
-
-class TestCleanupOldJobs:
-    """Verifica la logica di cleanup dei job scaduti."""
-
-    def test_cleanup_removes_old_job_directories(self, tmp_path):
-        """_cleanup_old_jobs rimuove directory più vecchie di max_age_seconds."""
-        # Arrange
-        import time
-
-        from person_anonymizer.web.app import _cleanup_old_jobs
-
-        # Crea una directory "vecchia" settando mtime nel passato
-        old_dir = tmp_path / "old_job"
-        old_dir.mkdir()
-        old_time = time.time() - 7200  # 2 ore fa
-        import os
-
-        os.utime(old_dir, (old_time, old_time))
-
-        # Patch UPLOAD_DIR e OUTPUT_DIR
-        with (
-            patch("person_anonymizer.web.app.UPLOAD_DIR", tmp_path),
-            patch("person_anonymizer.web.app.OUTPUT_DIR", tmp_path / "outputs"),
-        ):
-            # Act
-            _cleanup_old_jobs(max_age_seconds=3600)
-
-        # Assert
-        assert not old_dir.exists()
-
-    def test_cleanup_keeps_recent_job_directories(self, tmp_path):
-        """_cleanup_old_jobs non rimuove directory recenti."""
-        # Arrange
-        from person_anonymizer.web.app import _cleanup_old_jobs
-
-        recent_dir = tmp_path / "recent_job"
-        recent_dir.mkdir()
-        # mtime è recente (creato adesso)
-
-        with (
-            patch("person_anonymizer.web.app.UPLOAD_DIR", tmp_path),
-            patch("person_anonymizer.web.app.OUTPUT_DIR", tmp_path / "outputs"),
-        ):
-            # Act
-            _cleanup_old_jobs(max_age_seconds=3600)
-
-        # Assert
-        assert recent_dir.exists()
-
-
-# ---------------------------------------------------------------------------
 # TestAnnotationValidationExtended — routes_review._validate_annotation_frame
 # ---------------------------------------------------------------------------
 
