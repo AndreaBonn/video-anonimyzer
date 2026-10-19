@@ -98,6 +98,71 @@ def mask_to_polygons(
     return polygons
 
 
+def masks_to_polygons(masks, epsilon_ratio: float, min_area: int) -> list[list[tuple[int, int]]]:
+    """Convert every mask of one frame into polygons, concatenated in mask order.
+
+    Parameters
+    ----------
+    masks : iterable
+        Per-object masks; each must expose ``.cpu().numpy()`` (torch tensors).
+    epsilon_ratio : float
+        Simplification ratio forwarded to ``mask_to_polygons``.
+    min_area : int
+        Minimum contour area forwarded to ``mask_to_polygons``.
+
+    Returns
+    -------
+    list[list[tuple[int, int]]]
+        Polygons of all masks, flattened.
+    """
+    polygons = []
+    for mask in masks:
+        mask_np = mask.cpu().numpy().squeeze().astype(np.uint8)
+        polygons.extend(mask_to_polygons(mask_np, epsilon_ratio, min_area))
+    return polygons
+
+
+def polygon_or_box(
+    mask: np.ndarray,
+    box: tuple[int, int, int, int],
+    epsilon_ratio: float,
+    min_area: int,
+) -> list[tuple[int, int]]:
+    """Return the first polygon of ``mask``, or the box rectangle if it has none."""
+    polys = mask_to_polygons(mask, epsilon_ratio, min_area)
+    if polys:
+        return polys[0]
+    x1, y1, x2, y2 = box
+    return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+
+
+def build_frame_annotation(polygons: list[list[tuple[int, int]]], config) -> dict:
+    """Build the annotation entry of one frame, with one intensity per polygon."""
+    from .anonymization import resolve_intensity
+
+    intensities = []
+    for poly in polygons:
+        ys = [p[1] for p in poly]
+        box_h = max(ys) - min(ys) if ys else 0
+        intensities.append(resolve_intensity(config, box_h))
+    return {"auto": polygons, "manual": [], "intensities": intensities}
+
+
+def sam3_report_row(frame_idx: int, n_polygons: int) -> dict:
+    """Build the per-frame report row; SAM3 has no confidence, so it is fixed at 1.0."""
+    return {
+        "frame_number": frame_idx,
+        "persons_detected": n_polygons,
+        "avg_confidence": 1.0,
+        "min_confidence": 1.0,
+        "max_confidence": 1.0,
+        "motion_zones": 0,
+        "sliding_window_hits": 0,
+        "multiscale_hits": 0,
+        "post_check_alerts": 0,
+    }
+
+
 @dataclass
 class Sam3ImageRefiner:
     """Wrapper per SAM3 image predictor — affina box YOLO in maschere precise.
@@ -169,11 +234,9 @@ class Sam3ImageRefiner:
             masks, _, _ = self._predictor.predict(box=box_tensor, multimask_output=False)
             mask = masks[0].cpu().numpy().astype(np.uint8)
 
-            polys = mask_to_polygons(mask, self.epsilon_ratio, self.min_mask_area)
-            if polys:
-                polygons.append(polys[0])
-            else:
-                polygons.append([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
+            polygons.append(
+                polygon_or_box(mask, (x1, y1, x2, y2), self.epsilon_ratio, self.min_mask_area)
+            )
 
         return polygons
 
@@ -219,6 +282,8 @@ class Sam3VideoDetector:
         stop_event=None,
     ) -> tuple[dict, dict]:
         """Esegue detection + tracking SAM3 su un intero video.
+
+        Oltre le 30 righe: stato del predictor, loop, stop e rilascio restano insieme.
 
         Parameters
         ----------
@@ -266,36 +331,9 @@ class Sam3VideoDetector:
                     print("\n  Pipeline interrotta dall'utente.")
                     break
 
-                frame_polygons = []
-                for mask in masks:
-                    mask_np = mask.cpu().numpy().squeeze().astype(np.uint8)
-                    polys = mask_to_polygons(mask_np, self.epsilon_ratio, self.min_mask_area)
-                    frame_polygons.extend(polys)
-
-                from .anonymization import resolve_intensity
-
-                frame_intensities = []
-                for poly in frame_polygons:
-                    ys = [p[1] for p in poly]
-                    box_h = max(ys) - min(ys) if ys else 0
-                    frame_intensities.append(resolve_intensity(config, box_h))
-
-                annotations[frame_idx] = {
-                    "auto": frame_polygons,
-                    "manual": [],
-                    "intensities": frame_intensities,
-                }
-                report_data[frame_idx] = {
-                    "frame_number": frame_idx,
-                    "persons_detected": len(frame_polygons),
-                    "avg_confidence": 1.0,
-                    "min_confidence": 1.0,
-                    "max_confidence": 1.0,
-                    "motion_zones": 0,
-                    "sliding_window_hits": 0,
-                    "multiscale_hits": 0,
-                    "post_check_alerts": 0,
-                }
+                frame_polygons = masks_to_polygons(masks, self.epsilon_ratio, self.min_mask_area)
+                annotations[frame_idx] = build_frame_annotation(frame_polygons, config)
+                report_data[frame_idx] = sam3_report_row(frame_idx, len(frame_polygons))
                 pbar.update(1)
         finally:
             pbar.close()
