@@ -50,6 +50,17 @@ class TestMaskToPolygons:
         result = mask_to_polygons(mask, min_area=100)
         assert result == []
 
+    @pytest.mark.parametrize(("min_area", "kept"), [(100, 1), (101, 0)])
+    def test_contour_with_area_equal_to_min_area_is_kept(self, min_area, kept):
+        # An 11x11 filled square has a contour area of exactly 10 * 10 = 100 px:
+        # "area minima" is inclusive, so it survives min_area=100 and not 101.
+        mask = np.zeros((50, 50), dtype=np.uint8)
+        mask[10:21, 10:21] = 255
+
+        result = mask_to_polygons(mask, epsilon_ratio=0.0, min_area=min_area)
+
+        assert len(result) == kept
+
     def test_circle_mask_produces_polygon(self):
         mask = np.zeros((200, 200), dtype=np.uint8)
         cv2.circle(mask, (100, 100), 50, 255, -1)
