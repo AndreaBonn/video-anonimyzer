@@ -18,6 +18,8 @@ from person_anonymizer.manual_reviewer import (
     KEY_RIGHT,
     KEY_SPACE,
     ManualReviewer,
+    decode_key,
+    display_scale,
     run_manual_review,
 )
 from person_anonymizer.models import FisheyeContext
@@ -69,7 +71,7 @@ class TestManualReviewerInit:
         original = {0: {"auto": [[(0, 0), (10, 0), (10, 10)]], "manual": [], "intensities": []}}
         with patch("cv2.VideoCapture", return_value=mock_cap):
             rv = ManualReviewer("fake.mp4", original, config)
-        rv.annotations[0]["auto"].clear()
+        rv.editor.annotations[0]["auto"].clear()
         # L'originale non deve essere modificato
         assert len(original[0]["auto"]) == 1
 
@@ -87,15 +89,15 @@ class TestManualReviewerInit:
         assert rv.scale == 1.0
 
     def test_stats_initialized(self, reviewer):
-        assert reviewer.stats["added"] == 0
-        assert reviewer.stats["removed"] == 0
-        assert isinstance(reviewer.stats["frames_modified"], set)
-        assert isinstance(reviewer.stats["frames_reviewed"], set)
+        assert reviewer.editor.stats["added"] == 0
+        assert reviewer.editor.stats["removed"] == 0
+        assert isinstance(reviewer.editor.stats["frames_modified"], set)
+        assert isinstance(reviewer.editor.stats["frames_reviewed"], set)
 
     def test_initial_state(self, reviewer):
-        assert reviewer.current_frame_idx == 0
-        assert reviewer.current_polygon_points == []
-        assert reviewer.delete_mode is False
+        assert reviewer.editor.current_frame_idx == 0
+        assert reviewer.editor.pending_points == []
+        assert reviewer.editor.delete_mode is False
 
     def test_fisheye_default_is_fisheye_context(self, reviewer):
         assert isinstance(reviewer.fisheye, FisheyeContext)
@@ -174,72 +176,6 @@ class TestCoordinateConversion:
         assert abs(ry - orig_y) <= 1
 
 
-# ─── _point_in_polygon ──────────────────────────────────────────
-
-
-class TestPointInPolygon:
-    def test_point_inside_returns_true(self, reviewer):
-        poly = [(0, 0), (100, 0), (100, 100), (0, 100)]
-        assert reviewer._point_in_polygon(50, 50, poly) is True
-
-    def test_point_outside_returns_false(self, reviewer):
-        poly = [(0, 0), (100, 0), (100, 100), (0, 100)]
-        assert reviewer._point_in_polygon(200, 200, poly) is False
-
-    def test_point_on_edge_returns_true(self, reviewer):
-        poly = [(0, 0), (100, 0), (100, 100), (0, 100)]
-        assert reviewer._point_in_polygon(0, 50, poly) is True
-
-
-# ─── _delete_polygon_at ─────────────────────────────────────────
-
-
-class TestDeletePolygonAt:
-    def test_deletes_manual_polygon(self, reviewer):
-        reviewer.annotations[0]["manual"] = [[(5, 5), (55, 5), (55, 55), (5, 55)]]
-        reviewer._delete_polygon_at(30, 30)
-        assert reviewer.annotations[0]["manual"] == []
-        assert reviewer.stats["removed"] == 1
-
-    def test_deletes_auto_polygon(self, reviewer):
-        # frame 0 ha già un poligono auto nel fixture
-        reviewer.annotations[0]["manual"] = []
-        reviewer._delete_polygon_at(30, 30)
-        assert reviewer.annotations[0]["auto"] == []
-        assert reviewer.stats["removed"] == 1
-
-    def test_deletes_auto_removes_intensity(self, reviewer):
-        reviewer.annotations[0]["manual"] = []
-        reviewer.annotations[0]["intensities"] = [0.5]
-        reviewer._delete_polygon_at(30, 30)
-        assert reviewer.annotations[0]["intensities"] == []
-
-    def test_no_match_does_nothing(self, reviewer):
-        removed_before = reviewer.stats["removed"]
-        reviewer._delete_polygon_at(999, 999)
-        assert reviewer.stats["removed"] == removed_before
-
-    def test_manual_preferred_over_auto(self, reviewer):
-        # Sovrapponi un poligono manuale allo stesso punto
-        reviewer.annotations[0]["manual"] = [[(5, 5), (55, 5), (55, 55), (5, 55)]]
-        reviewer._delete_polygon_at(30, 30)
-        # Deve aver rimosso il manuale, non l'auto
-        assert reviewer.annotations[0]["auto"] != []
-        assert reviewer.annotations[0]["manual"] == []
-
-    def test_frames_modified_updated(self, reviewer):
-        reviewer.annotations[0]["manual"] = [[(5, 5), (55, 5), (55, 55), (5, 55)]]
-        reviewer._delete_polygon_at(30, 30)
-        assert 0 in reviewer.stats["frames_modified"]
-
-    def test_missing_frame_annotation_preserves_state(self, reviewer):
-        # Frame 99 non ha entry nelle annotations — stato non cambia
-        reviewer.current_frame_idx = 99
-        removed_before = reviewer.stats["removed"]
-        reviewer._delete_polygon_at(30, 30)
-        assert reviewer.stats["removed"] == removed_before
-
-
 # ─── _handle_key ────────────────────────────────────────────────
 
 
@@ -251,45 +187,45 @@ class TestHandleKey:
         assert reviewer._handle_key(ord("Q")) is False
 
     def test_right_arrow_advances_frame(self, reviewer):
-        reviewer.current_frame_idx = 0
+        reviewer.editor.current_frame_idx = 0
         reviewer._handle_key(KEY_RIGHT)
-        assert reviewer.current_frame_idx == 1
+        assert reviewer.editor.current_frame_idx == 1
 
     def test_space_advances_frame(self, reviewer):
-        reviewer.current_frame_idx = 0
+        reviewer.editor.current_frame_idx = 0
         reviewer._handle_key(KEY_SPACE)
-        assert reviewer.current_frame_idx == 1
+        assert reviewer.editor.current_frame_idx == 1
 
     def test_right_arrow_at_last_frame_stays(self, reviewer):
-        reviewer.current_frame_idx = reviewer.total_frames - 1
+        reviewer.editor.current_frame_idx = reviewer.editor.total_frames - 1
         reviewer._handle_key(KEY_RIGHT)
-        assert reviewer.current_frame_idx == reviewer.total_frames - 1
+        assert reviewer.editor.current_frame_idx == reviewer.editor.total_frames - 1
 
     # Raw cv2.waitKeyEx codes: X11 keysyms on the Qt/GTK backends, virtual-key
     # codes shifted by 16 on Windows, NSEvent function keys on macOS.
     @pytest.mark.parametrize("left_code", [0xFF51, 0x250000, 0xF702, 0x10FF51])
     def test_left_arrow_goes_back_one_frame(self, reviewer, left_code):
-        reviewer.current_frame_idx = 2
+        reviewer.editor.current_frame_idx = 2
         result = reviewer._handle_key(left_code)
         assert result is True
-        assert reviewer.current_frame_idx == 1
+        assert reviewer.editor.current_frame_idx == 1
 
     @pytest.mark.parametrize("right_code", [0xFF53, 0x270000, 0xF703, 0x10FF53])
     def test_right_arrow_code_advances_on_every_backend(self, reviewer, right_code):
-        reviewer.current_frame_idx = 0
+        reviewer.editor.current_frame_idx = 0
         reviewer._handle_key(right_code)
-        assert reviewer.current_frame_idx == 1
+        assert reviewer.editor.current_frame_idx == 1
 
     def test_left_arrow_at_first_frame_stays(self, reviewer):
-        reviewer.current_frame_idx = 0
+        reviewer.editor.current_frame_idx = 0
         reviewer._handle_key(KEY_LEFT)
-        assert reviewer.current_frame_idx == 0
+        assert reviewer.editor.current_frame_idx == 0
 
     def test_uppercase_s_does_not_navigate(self, reviewer):
         # 0xFF53 & 0xFF == ord("S"): the old masking turned S into "next frame"
-        reviewer.current_frame_idx = 0
+        reviewer.editor.current_frame_idx = 0
         reviewer._handle_key(ord("S"))
-        assert reviewer.current_frame_idx == 0
+        assert reviewer.editor.current_frame_idx == 0
 
     def test_q_with_modifier_bits_returns_false(self, reviewer):
         # GTK reports modifier state (e.g. NumLock) in the upper 16 bits
@@ -298,78 +234,78 @@ class TestHandleKey:
     @pytest.mark.parametrize("backspace_code", [8, 0xFF08])
     def test_backspace_removes_last_point(self, reviewer, backspace_code):
         # The Qt backend swallows every Ctrl+key, so Ctrl+Z never arrives there
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(backspace_code)
-        assert reviewer.current_polygon_points == [(0, 0), (10, 0)]
+        assert reviewer.editor.pending_points == [(0, 0), (10, 0)]
 
     def test_enter_adds_polygon_with_enough_points(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(KEY_ENTER)
-        assert len(reviewer.annotations[0]["manual"]) == 1
-        assert reviewer.stats["added"] == 1
-        assert reviewer.current_polygon_points == []
+        assert len(reviewer.editor.annotations[0]["manual"]) == 1
+        assert reviewer.editor.stats["added"] == 1
+        assert reviewer.editor.pending_points == []
 
     def test_enter_ignored_with_fewer_than_3_points(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0)]
         reviewer._handle_key(KEY_ENTER)
-        assert reviewer.annotations[0]["manual"] == []
+        assert reviewer.editor.annotations[0]["manual"] == []
 
     def test_enter_creates_annotation_entry_for_new_frame(self, reviewer):
-        reviewer.current_frame_idx = 5
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.current_frame_idx = 5
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(KEY_ENTER)
-        assert 5 in reviewer.annotations
-        assert len(reviewer.annotations[5]["manual"]) == 1
+        assert 5 in reviewer.editor.annotations
+        assert len(reviewer.editor.annotations[5]["manual"]) == 1
 
     def test_ctrl_z_removes_last_point(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(KEY_CTRL_Z)
-        assert len(reviewer.current_polygon_points) == 2
+        assert len(reviewer.editor.pending_points) == 2
 
     def test_ctrl_z_noop_when_no_points(self, reviewer):
-        reviewer.current_polygon_points = []
+        reviewer.editor.pending_points = []
         reviewer._handle_key(KEY_CTRL_Z)  # non deve sollevare
-        assert reviewer.current_polygon_points == []
+        assert reviewer.editor.pending_points == []
 
     def test_d_toggles_delete_mode_on(self, reviewer):
-        reviewer.delete_mode = False
+        reviewer.editor.delete_mode = False
         reviewer._handle_key(ord("d"))
-        assert reviewer.delete_mode is True
+        assert reviewer.editor.delete_mode is True
 
     def test_d_toggles_delete_mode_off(self, reviewer):
-        reviewer.delete_mode = True
+        reviewer.editor.delete_mode = True
         reviewer._handle_key(ord("d"))
-        assert reviewer.delete_mode is False
+        assert reviewer.editor.delete_mode is False
 
     def test_uppercase_d_toggles_delete_mode(self, reviewer):
-        reviewer.delete_mode = False
+        reviewer.editor.delete_mode = False
         reviewer._handle_key(ord("D"))
-        assert reviewer.delete_mode is True
+        assert reviewer.editor.delete_mode is True
 
     def test_d_clears_current_polygon(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0)]
         reviewer._handle_key(ord("d"))
-        assert reviewer.current_polygon_points == []
+        assert reviewer.editor.pending_points == []
 
     def test_esc_clears_current_polygon(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(KEY_ESC)
-        assert reviewer.current_polygon_points == []
+        assert reviewer.editor.pending_points == []
 
     def test_navigation_clears_polygon_and_delete_mode(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0)]
-        reviewer.delete_mode = True
+        reviewer.editor.pending_points = [(0, 0), (10, 0)]
+        reviewer.editor.delete_mode = True
         reviewer._handle_key(KEY_RIGHT)
-        assert reviewer.current_polygon_points == []
-        assert reviewer.delete_mode is False
+        assert reviewer.editor.pending_points == []
+        assert reviewer.editor.delete_mode is False
 
     def test_unknown_key_returns_true(self, reviewer):
         assert reviewer._handle_key(ord("x")) is True
 
     def test_frames_modified_updated_on_enter(self, reviewer):
-        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer.editor.pending_points = [(0, 0), (10, 0), (5, 10)]
         reviewer._handle_key(KEY_ENTER)
-        assert 0 in reviewer.stats["frames_modified"]
+        assert 0 in reviewer.editor.stats["frames_modified"]
 
 
 # ─── _on_mouse ──────────────────────────────────────────────────
@@ -383,44 +319,21 @@ class TestOnMouse:
     def test_lbuttondown_adds_point_in_normal_mode(self, reviewer):
         with patch.object(reviewer, "_display_to_original", return_value=(50, 60)):
             reviewer._on_mouse(1, 50, 60, 0, None)  # EVENT_LBUTTONDOWN = 1
-        assert (50, 60) in reviewer.current_polygon_points
+        assert (50, 60) in reviewer.editor.pending_points
 
     def test_lbuttondown_in_delete_mode_calls_delete(self, reviewer):
-        reviewer.delete_mode = True
+        reviewer.editor.delete_mode = True
         with (
             patch.object(reviewer, "_display_to_original", return_value=(30, 30)),
-            patch.object(reviewer, "_delete_polygon_at") as mock_del,
+            patch.object(reviewer.editor, "delete_at") as mock_del,
         ):
             reviewer._on_mouse(1, 30, 30, 0, None)
-        mock_del.assert_called_once_with(30, 30)
+        mock_del.assert_called_once_with((30, 30))
 
     def test_other_mouse_event_ignored(self, reviewer):
-        initial_points = list(reviewer.current_polygon_points)
+        initial_points = list(reviewer.editor.pending_points)
         reviewer._on_mouse(2, 50, 60, 0, None)  # EVENT_LBUTTONUP = 2
-        assert reviewer.current_polygon_points == initial_points
-
-
-# ─── _get_final_stats ───────────────────────────────────────────
-
-
-class TestGetFinalStats:
-    def test_returns_correct_counts(self, reviewer):
-        reviewer.stats["added"] = 3
-        reviewer.stats["removed"] = 1
-        reviewer.stats["frames_modified"] = {0, 1, 2}
-        reviewer.stats["frames_reviewed"] = {0, 1}
-        stats = reviewer._get_final_stats()
-        assert stats["added"] == 3
-        assert stats["removed"] == 1
-        assert stats["frames_modified"] == 3
-        assert stats["frames_reviewed"] == 2
-
-    def test_empty_stats(self, reviewer):
-        stats = reviewer._get_final_stats()
-        assert stats["added"] == 0
-        assert stats["removed"] == 0
-        assert stats["frames_modified"] == 0
-        assert stats["frames_reviewed"] == 0
+        assert reviewer.editor.pending_points == initial_points
 
 
 # ─── _render_display ────────────────────────────────────────────
@@ -435,7 +348,7 @@ class TestRenderDisplay:
         assert result.shape[2] == 3  # BGR
 
     def test_render_with_polygon_points_draws_lines(self, reviewer):
-        reviewer.current_polygon_points = [(10, 10), (50, 10)]
+        reviewer.editor.pending_points = [(10, 10), (50, 10)]
         with patch("cv2.line") as mock_line, patch("cv2.circle") as mock_circle:
             reviewer._render_display()
         # 2 punti → 1 linea tra loro + cerchi per ogni punto
@@ -443,7 +356,7 @@ class TestRenderDisplay:
         assert mock_circle.call_count >= 2
 
     def test_render_without_annotation_returns_clean_frame(self, reviewer):
-        reviewer.current_frame_idx = 99  # frame senza annotazioni
+        reviewer.editor.current_frame_idx = 99  # frame senza annotazioni
         result = reviewer._render_display()
         # Il frame deve essere valido anche senza annotazioni
         assert result.shape == (reviewer.display_h, reviewer.display_w, 3)
@@ -485,7 +398,7 @@ class TestManualReviewerRun:
 
     def test_run_creates_annotation_entry_for_new_frame(self, reviewer):
         # Frame 0 non ha entry → run deve crearlo
-        reviewer.annotations = {}
+        reviewer.editor.annotations = {}
         with (
             patch("cv2.namedWindow"),
             patch("cv2.setMouseCallback"),
@@ -554,3 +467,34 @@ class TestRunManualReview:
 
         assert ann is expected_ann
         assert stats is expected_stats
+
+
+# ─── display_scale / decode_key ─────────────────────────────────
+
+
+class TestDisplayScale:
+    def test_frame_wider_than_max_is_scaled_to_max_width(self):
+        assert display_scale(2000, 1000, 1000) == (0.5, 1000, 500)
+
+    def test_frame_equal_to_max_width_is_unscaled(self):
+        assert display_scale(1000, 700, 1000) == (1.0, 1000, 700)
+
+    def test_height_is_truncated_to_int(self):
+        scale, width, height = display_scale(1920, 1080, 1280)
+        assert (width, height) == (1280, 720)
+        assert scale == pytest.approx(1280 / 1920)
+
+
+class TestDecodeKey:
+    @pytest.mark.parametrize("code", [0xFF51, 0x250000, 0xF702, 0xFF53, 0x270000, 0xF703])
+    def test_arrow_codes_are_not_masked(self, code):
+        assert decode_key(code) == code
+
+    def test_modifier_bits_are_masked_off_other_keys(self):
+        assert decode_key(0x100000 | ord("q")) == ord("q")
+
+    def test_masked_arrow_variant_is_recognized_as_arrow(self):
+        assert decode_key(0x10FF51) == 0xFF51
+
+    def test_plain_key_is_unchanged(self):
+        assert decode_key(ord("S")) == ord("S")

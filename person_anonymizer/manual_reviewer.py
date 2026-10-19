@@ -1,16 +1,22 @@
 """
 Modulo di revisione manuale con interfaccia OpenCV.
 
-Gestisce la finestra interattiva per aggiungere/rimuovere poligoni
-di oscuramento su ogni frame del video.
+Shell OpenCV della revisione: finestra, input e rendering. Lo stato e le
+regole di modifica stanno in `review_editor`, il disegno in `review_drawing`.
 """
-
-from copy import deepcopy
 
 import cv2
 import numpy as np
 
 from .models import FisheyeContext
+from .review_drawing import (
+    OverlayStyle,
+    draw_annotations,
+    draw_pending_polygon,
+    draw_status_bars,
+    format_info_text,
+)
+from .review_editor import ReviewEditor
 
 __all__ = ["ManualReviewer", "run_manual_review"]
 
@@ -33,56 +39,64 @@ KEY_NONE = -1
 # GTK reports modifier state (NumLock, Shift...) above the low 16 bits.
 _KEYSYM_MASK = 0xFFFF
 
+WINDOW_NAME = "Person Anonymizer - Revisione Manuale"
+WAIT_KEY_DELAY_MS = 30
+UNREADABLE_TEXT_ORIGIN_X = 50
+UNREADABLE_FONT_SCALE = 1
+UNREADABLE_COLOR = (0, 0, 255)
+UNREADABLE_THICKNESS = 2
+
+
+def display_scale(frame_w: int, frame_h: int, max_width: int) -> tuple[float, int, int]:
+    """
+    Compute the scale that fits a frame into the review window.
+
+    Returns
+    -------
+    tuple[float, int, int]
+        Scale factor, display width and display height. Frames not wider than
+        `max_width` are shown unscaled.
+    """
+    if frame_w <= max_width:
+        return 1.0, frame_w, frame_h
+    scale = max_width / frame_w
+    return scale, max_width, int(frame_h * scale)
+
+
+def decode_key(raw: int) -> int:
+    """
+    Normalize a raw cv2.waitKeyEx code.
+
+    Arrow codes are kept whole because masking turns them into letters;
+    every other code loses the modifier bits GTK reports above bit 16.
+    """
+    if raw in KEY_LEFT_CODES or raw in KEY_RIGHT_CODES:
+        return raw
+    return raw & _KEYSYM_MASK
+
 
 class ManualReviewer:
-    """Interfaccia interattiva OpenCV per revisione poligoni di oscuramento."""
+    """OpenCV shell of the manual review: video access, rendering and input decoding."""
 
     def __init__(self, video_path, auto_annotations, config, fisheye=None):
-        # Copia annotazioni
-        self.annotations = deepcopy(auto_annotations)
-
-        # Configurazione colori e display
-        self.auto_color = config.review_auto_color
-        self.manual_color = config.review_manual_color
-        self.drawing_color = config.review_drawing_color
-        self.fill_alpha = config.review_fill_alpha
+        self.style = OverlayStyle.from_config(config)
         self.max_width = config.review_window_max_width
 
-        # Video
         self.cap = cv2.VideoCapture(video_path)
         self.fisheye = fisheye or FisheyeContext()
 
-        # Metadata video
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.frame_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.scale, self.display_w, self.display_h = display_scale(
+            self.frame_w, self.frame_h, self.max_width
+        )
 
-        # Scaling
-        self.scale = 1.0
-        self.display_w = self.frame_w
-        self.display_h = self.frame_h
-        if self.frame_w > self.max_width:
-            self.scale = self.max_width / self.frame_w
-            self.display_w = self.max_width
-            self.display_h = int(self.frame_h * self.scale)
-
-        # Stato interazione
-        self.current_frame_idx = 0
-        self.current_polygon_points = []
-        self.delete_mode = False
+        self.editor = ReviewEditor(auto_annotations, self.total_frames)
         self.mouse_pos = (0, 0)
 
-        # Cache frame
         self._cached_frame = None
         self._cached_frame_idx = -1
-
-        # Statistiche
-        self.stats = {
-            "added": 0,
-            "removed": 0,
-            "frames_modified": set(),
-            "frames_reviewed": set(),
-        }
 
     def _get_frame(self, idx):
         """
@@ -104,17 +118,7 @@ class ManualReviewer:
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = self.cap.read()
         if not ret:
-            # Frame corrotto: restituisci frame nero
-            frame = np.zeros((self.frame_h, self.frame_w, 3), dtype=np.uint8)
-            cv2.putText(
-                frame,
-                f"Frame {idx}: non leggibile",
-                (50, self.frame_h // 2),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 255),
-                2,
-            )
+            frame = self._unreadable_frame(idx)
 
         frame = self.fisheye.undistort(frame)
 
@@ -122,153 +126,58 @@ class ManualReviewer:
         self._cached_frame_idx = idx
         return frame.copy()
 
+    def _unreadable_frame(self, idx):
+        """Return a black frame labelled as unreadable, for corrupted video frames."""
+        frame = np.zeros((self.frame_h, self.frame_w, 3), dtype=np.uint8)
+        cv2.putText(
+            frame,
+            f"Frame {idx}: non leggibile",
+            (UNREADABLE_TEXT_ORIGIN_X, self.frame_h // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            UNREADABLE_FONT_SCALE,
+            UNREADABLE_COLOR,
+            UNREADABLE_THICKNESS,
+        )
+        return frame
+
     def _display_to_original(self, x, y):
-        """
-        Converte coordinate display in coordinate originali del frame.
-
-        Parameters
-        ----------
-        x, y : int
-            Coordinate nello spazio display (scalato).
-
-        Returns
-        -------
-        tuple[int, int]
-            Coordinate nello spazio originale del frame.
-        """
+        """Convert display (scaled) coordinates to original frame coordinates."""
         return int(x / self.scale), int(y / self.scale)
 
     def _original_to_display(self, x, y):
-        """
-        Converte coordinate originali del frame in coordinate display.
-
-        Parameters
-        ----------
-        x, y : int
-            Coordinate nello spazio originale del frame.
-
-        Returns
-        -------
-        tuple[int, int]
-            Coordinate nello spazio display (scalato).
-        """
+        """Convert original frame coordinates to display (scaled) coordinates."""
         return int(x * self.scale), int(y * self.scale)
-
-    def _point_in_polygon(self, px, py, polygon):
-        """
-        Verifica se un punto è dentro un poligono tramite cv2.pointPolygonTest.
-
-        Parameters
-        ----------
-        px, py : float
-            Coordinate del punto da testare.
-        polygon : list
-            Lista di punti (x, y) che definiscono il poligono.
-
-        Returns
-        -------
-        bool
-            True se il punto è dentro o sul bordo del poligono.
-        """
-        pts = np.array(polygon, dtype=np.int32)
-        result = cv2.pointPolygonTest(pts, (px, py), False)
-        return result >= 0
 
     def _render_display(self):
         """
-        Renderizza il frame corrente con overlay di poligoni e UI.
+        Compose the current frame with overlays, scaling and status bars.
 
         Returns
         -------
         numpy.ndarray
             Frame BGR pronto per cv2.imshow.
         """
-        frame = self._get_frame(self.current_frame_idx)
-        overlay = frame.copy()
-
-        ann = self.annotations.get(
-            self.current_frame_idx, {"auto": [], "manual": [], "intensities": []}
+        editor = self.editor
+        annotation = editor.current_annotation()
+        frame = draw_annotations(
+            self._get_frame(editor.current_frame_idx), annotation=annotation, style=self.style
         )
-        auto_polys = ann.get("auto", [])
-        manual_polys = ann.get("manual", [])
-
-        # Poligoni automatici (verde)
-        for poly in auto_polys:
-            pts = np.array(poly, dtype=np.int32)
-            cv2.fillPoly(overlay, [pts], self.auto_color)
-            cv2.polylines(frame, [pts], True, self.auto_color, 2)
-            for pt in poly:
-                cv2.circle(frame, tuple(pt), 4, (255, 255, 255), -1)
-
-        # Poligoni manuali (arancione)
-        for poly in manual_polys:
-            pts = np.array(poly, dtype=np.int32)
-            cv2.fillPoly(overlay, [pts], self.manual_color)
-            cv2.polylines(frame, [pts], True, self.manual_color, 2)
-            for pt in poly:
-                cv2.circle(frame, tuple(pt), 4, (255, 255, 255), -1)
-
-        # Blend overlay
-        cv2.addWeighted(overlay, self.fill_alpha, frame, 1 - self.fill_alpha, 0, frame)
-
-        # Poligono in corso di disegno
-        if self.current_polygon_points:
-            for i, pt in enumerate(self.current_polygon_points):
-                cv2.circle(frame, tuple(pt), 5, (255, 255, 255), -1)
-                if i > 0:
-                    cv2.line(
-                        frame,
-                        tuple(self.current_polygon_points[i - 1]),
-                        tuple(pt),
-                        self.drawing_color,
-                        2,
-                    )
-
-            # Linea dall'ultimo punto al cursore
-            last_pt = self.current_polygon_points[-1]
-            mx, my = self._display_to_original(*self.mouse_pos)
-            cv2.line(frame, tuple(last_pt), (mx, my), self.drawing_color, 1, cv2.LINE_AA)
-
-        # Resize per display
+        frame = draw_pending_polygon(
+            frame,
+            points=editor.pending_points,
+            cursor=self._display_to_original(*self.mouse_pos),
+            color=self.style.drawing_color,
+        )
         if self.scale != 1.0:
             frame = cv2.resize(frame, (self.display_w, self.display_h))
-
-        # Barra info in alto
-        n_auto = len(auto_polys)
-        n_manual = len(manual_polys)
-        mode_label = "[DEL]" if self.delete_mode else "[NORM]"
-        info_text = (
-            f"  Frame {self.current_frame_idx + 1} / {self.total_frames}  |  "
-            f"Poligoni: {n_auto + n_manual} "
-            f"({n_auto} auto, {n_manual} man)  |  {mode_label}"
+        info_text = format_info_text(
+            editor.current_frame_idx, editor.total_frames, annotation, editor.delete_mode
         )
-
-        # Sfondo barra info
-        bar_h = 30
-        cv2.rectangle(frame, (0, 0), (self.display_w, bar_h), (40, 40, 40), -1)
-        cv2.putText(frame, info_text, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-        # Barra istruzioni in basso
-        help_h = 45
-        y_start = self.display_h - help_h
-        cv2.rectangle(frame, (0, y_start), (self.display_w, self.display_h), (40, 40, 40), -1)
-        help_line1 = "  <-/-> Naviga  |  Spazio Avanti  |  Invio Chiudi poligono  |  Q Esci"
-        help_line2 = (
-            "  Click Aggiungi punto  |  Backspace Annulla punto  |  D Elimina  |  "
-            "Esc Annulla poligono"
-        )
-        cv2.putText(
-            frame, help_line1, (5, y_start + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1
-        )
-        cv2.putText(
-            frame, help_line2, (5, y_start + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1
-        )
-
-        return frame
+        return draw_status_bars(frame, info_text=info_text)
 
     def _on_mouse(self, event, x, y, flags, param):
         """
-        Callback mouse per aggiunta punti e cancellazione poligoni.
+        Mouse callback: track the cursor and forward left clicks to the editor.
 
         Parameters
         ----------
@@ -280,127 +189,35 @@ class ManualReviewer:
             Parametri aggiuntivi OpenCV (non usati).
         """
         self.mouse_pos = (x, y)
-        orig_x, orig_y = self._display_to_original(x, y)
-
         if event == cv2.EVENT_LBUTTONDOWN:
-            if self.delete_mode:
-                self._delete_polygon_at(orig_x, orig_y)
-            else:
-                self.current_polygon_points.append((orig_x, orig_y))
-
-    def _delete_polygon_at(self, orig_x, orig_y):
-        """
-        Cerca e rimuove il primo poligono che contiene il punto dato.
-
-        Controlla prima i poligoni manuali, poi quelli automatici.
-
-        Parameters
-        ----------
-        orig_x, orig_y : int
-            Coordinate nello spazio originale del frame.
-        """
-        ann = self.annotations.get(
-            self.current_frame_idx, {"auto": [], "manual": [], "intensities": []}
-        )
-
-        # Cerca prima nei manuali
-        for i, poly in enumerate(ann.get("manual", [])):
-            if self._point_in_polygon(orig_x, orig_y, poly):
-                ann["manual"].pop(i)
-                self.stats["removed"] += 1
-                self.stats["frames_modified"].add(self.current_frame_idx)
-                return
-
-        # Poi negli automatici
-        for i, poly in enumerate(ann.get("auto", [])):
-            if self._point_in_polygon(orig_x, orig_y, poly):
-                ann["auto"].pop(i)
-                # Rimuovi anche intensità corrispondente
-                intensities = ann.get("intensities", [])
-                if i < len(intensities):
-                    intensities.pop(i)
-                self.stats["removed"] += 1
-                self.stats["frames_modified"].add(self.current_frame_idx)
-                return
+            self.editor.click(self._display_to_original(x, y))
 
     def _handle_key(self, key):
         """
-        Gestisce la pressione di un tasto e aggiorna lo stato interno.
-
-        Parameters
-        ----------
-        key : int
-            Codice tasto grezzo restituito da cv2.waitKeyEx.
+        Map a raw key press (cv2.waitKeyEx code) to an editor action.
 
         Returns
         -------
         bool
-            False se il loop deve terminare (tasto Q), True altrimenti.
+            False when the loop must end (Q key), True otherwise.
         """
-        if key not in KEY_LEFT_CODES and key not in KEY_RIGHT_CODES:
-            key &= _KEYSYM_MASK
-        # Q - Conferma e esci
-        if key == ord("q") or key == ord("Q"):
+        key = decode_key(key)
+        editor = self.editor
+        if key in (ord("q"), ord("Q")):
             return False
-
-        # Freccia destra o Spazio — Avanti
         if key in KEY_RIGHT_CODES or key == KEY_SPACE:
-            self.current_polygon_points = []
-            self.delete_mode = False
-            if self.current_frame_idx < self.total_frames - 1:
-                self.current_frame_idx += 1
-
-        # Freccia sinistra — Indietro
+            editor.go_next()
         elif key in KEY_LEFT_CODES:
-            self.current_polygon_points = []
-            self.delete_mode = False
-            if self.current_frame_idx > 0:
-                self.current_frame_idx -= 1
-
-        # Invio — Chiudi poligono
+            editor.go_previous()
         elif key == KEY_ENTER:
-            if len(self.current_polygon_points) >= 3:
-                ann = self.annotations.get(
-                    self.current_frame_idx, {"auto": [], "manual": [], "intensities": []}
-                )
-                ann["manual"].append(list(self.current_polygon_points))
-                self.annotations[self.current_frame_idx] = ann
-                self.stats["added"] += 1
-                self.stats["frames_modified"].add(self.current_frame_idx)
-                self.current_polygon_points = []
-
-        # Backspace o Ctrl+Z — Annulla ultimo punto
+            editor.close_polygon()
         elif key == KEY_CTRL_Z or key in KEY_BACKSPACE_CODES:
-            if self.current_polygon_points:
-                self.current_polygon_points.pop()
-
-        # D — Toggle modalità delete
-        elif key == ord("d") or key == ord("D"):
-            self.delete_mode = not self.delete_mode
-            self.current_polygon_points = []
-
-        # Esc — Annulla poligono in corso
+            editor.undo_point()
+        elif key in (ord("d"), ord("D")):
+            editor.toggle_delete_mode()
         elif key == KEY_ESC:
-            self.current_polygon_points = []
-
+            editor.cancel_polygon()
         return True
-
-    def _get_final_stats(self):
-        """
-        Converte i set interni in conteggi per l'output finale.
-
-        Returns
-        -------
-        dict
-            Statistiche con chiavi added, removed, frames_modified,
-            frames_reviewed come interi.
-        """
-        return {
-            "added": self.stats["added"],
-            "removed": self.stats["removed"],
-            "frames_modified": len(self.stats["frames_modified"]),
-            "frames_reviewed": len(self.stats["frames_reviewed"]),
-        }
 
     def run(self):
         """
@@ -411,37 +228,23 @@ class ManualReviewer:
         tuple (annotations, final_stats)
             Annotazioni aggiornate e statistiche della sessione.
         """
-        window_name = "Person Anonymizer - Revisione Manuale"
-        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
-        cv2.setMouseCallback(window_name, self._on_mouse)
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+        cv2.setMouseCallback(WINDOW_NAME, self._on_mouse)
 
         running = True
         while running:
-            self.stats["frames_reviewed"].add(self.current_frame_idx)
+            self.editor.visit_current()
+            cv2.imshow(WINDOW_NAME, self._render_display())
 
-            # Assicurati che il frame abbia entry nelle annotazioni
-            if self.current_frame_idx not in self.annotations:
-                self.annotations[self.current_frame_idx] = {
-                    "auto": [],
-                    "manual": [],
-                    "intensities": [],
-                }
-
-            display = self._render_display()
-            cv2.imshow(window_name, display)
-
-            key = cv2.waitKeyEx(30)
-
+            key = cv2.waitKeyEx(WAIT_KEY_DELAY_MS)
             if key == KEY_NONE:
-                # Nessun tasto premuto
                 continue
-
             running = self._handle_key(key)
 
         cv2.destroyAllWindows()
         self.cap.release()
 
-        return self.annotations, self._get_final_stats()
+        return self.editor.annotations, self.editor.final_stats()
 
 
 def run_manual_review(video_path, auto_annotations, config, fisheye=None):
@@ -468,5 +271,5 @@ def run_manual_review(video_path, auto_annotations, config, fisheye=None):
     if not reviewer.cap.isOpened():
         print("Errore: impossibile aprire il video per la revisione.")
         stats = {"added": 0, "removed": 0, "frames_modified": 0, "frames_reviewed": 0}
-        return reviewer.annotations, stats
+        return reviewer.editor.annotations, stats
     return reviewer.run()
