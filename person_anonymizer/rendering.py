@@ -19,6 +19,58 @@ _log = logging.getLogger(__name__)
 __all__ = ["render_video", "compute_review_stats"]
 
 
+def _blur_safe(intensity, method):
+    """Return ``intensity`` made odd when ``method`` is "blur" (the kernel size must be odd)."""
+    if method == "blur" and intensity % 2 == 0:
+        return intensity + 1
+    return intensity
+
+
+def obscure_frame(frame, ann, method, config: PipelineConfig):
+    """Return a copy of ``frame`` with the annotated polygons obscured.
+
+    Auto polygons use their per-polygon intensity when adaptive intensity is
+    enabled and one is available; manual polygons always use the configured
+    intensity. ``frame`` is not modified.
+
+    Parameters
+    ----------
+    frame : numpy.ndarray
+        Frame BGR (già corretto per il fish-eye).
+    ann : dict
+        Annotazioni del frame {"auto": [...], "manual": [...], "intensities": [...]}.
+    method : str
+        Metodo di oscuramento ("pixelation" o "blur").
+    config : PipelineConfig
+        Configurazione della pipeline.
+
+    Returns
+    -------
+    numpy.ndarray
+        Frame con i poligoni oscurati.
+    """
+    render_frame = frame.copy()
+    intensities = ann.get("intensities", [])
+
+    for i, poly in enumerate(ann.get("auto", [])):
+        if config.enable_adaptive_intensity and i < len(intensities):
+            intensity = intensities[i]
+        else:
+            intensity = config.anonymization_intensity
+        render_frame = obscure_polygon(render_frame, poly, method, _blur_safe(intensity, method))
+
+    for poly in ann.get("manual", []):
+        intensity = _blur_safe(config.anonymization_intensity, method)
+        render_frame = obscure_polygon(render_frame, poly, method, intensity)
+
+    return render_frame
+
+
+def build_debug_frame(frame, ann, config: PipelineConfig):
+    """Return ``frame`` with the auto and manual polygons drawn for the debug video."""
+    return draw_debug_polygons(frame, ann.get("auto", []), ann.get("manual", []), config)
+
+
 def render_video(
     input_path,
     output_path,
@@ -35,6 +87,8 @@ def render_video(
 ):
     """
     Renderizza il video anonimizzato dal video originale.
+
+    Oltre le 30 righe: apertura e rilascio di capture e writer restano col loop che li usa.
 
     Parameters
     ----------
@@ -96,34 +150,12 @@ def render_video(
                 break
 
             frame = fisheye.undistort(frame)
-
-            render_frame = frame.copy()
             ann = annotations.get(frame_idx, {"auto": [], "manual": [], "intensities": []})
 
-            auto_polys = ann.get("auto", [])
-            manual_polys = ann.get("manual", [])
-            intensities = ann.get("intensities", [])
-
-            for i, poly in enumerate(auto_polys):
-                if config.enable_adaptive_intensity and i < len(intensities):
-                    intensity = intensities[i]
-                else:
-                    intensity = config.anonymization_intensity
-                if method == "blur" and intensity % 2 == 0:
-                    intensity += 1
-                render_frame = obscure_polygon(render_frame, poly, method, intensity)
-
-            for poly in manual_polys:
-                intensity = config.anonymization_intensity
-                if method == "blur" and intensity % 2 == 0:
-                    intensity += 1
-                render_frame = obscure_polygon(render_frame, poly, method, intensity)
-
-            out_writer.write(render_frame)
+            out_writer.write(obscure_frame(frame, ann, method, config))
 
             if debug_writer:
-                debug_frame = draw_debug_polygons(frame, auto_polys, manual_polys, config)
-                debug_writer.write(debug_frame)
+                debug_writer.write(build_debug_frame(frame, ann, config))
 
             frame_idx += 1
             pbar.update(1)
