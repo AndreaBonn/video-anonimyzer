@@ -14,14 +14,24 @@ from .models import FisheyeContext
 
 __all__ = ["ManualReviewer", "run_manual_review"]
 
-# Key codes OpenCV
-KEY_RIGHT = 83
-KEY_LEFT = 81
+# Raw key codes as returned by cv2.waitKeyEx. Arrows are X11 keysyms on the
+# Qt/GTK backends, virtual-key codes shifted by 16 on Windows and NSEvent
+# function keys on macOS. Masking with 0xFF (cv2.waitKey) would turn the left
+# arrow into "Q" (quit) and the right arrow into "S".
+KEY_LEFT = 0xFF51
+KEY_RIGHT = 0xFF53
+KEY_LEFT_CODES = frozenset({KEY_LEFT, 0x250000, 0xF702})
+KEY_RIGHT_CODES = frozenset({KEY_RIGHT, 0x270000, 0xF703})
 KEY_SPACE = 32
 KEY_ENTER = 13
 KEY_CTRL_Z = 26
 KEY_ESC = 27
-KEY_NONE = 255
+# The Qt backend swallows every Ctrl+key, so Backspace is the undo key that
+# works everywhere.
+KEY_BACKSPACE_CODES = frozenset({8, 0xFF08})
+KEY_NONE = -1
+# GTK reports modifier state (NumLock, Shift...) above the low 16 bits.
+_KEYSYM_MASK = 0xFFFF
 
 
 class ManualReviewer:
@@ -244,7 +254,8 @@ class ManualReviewer:
         cv2.rectangle(frame, (0, y_start), (self.display_w, self.display_h), (40, 40, 40), -1)
         help_line1 = "  <-/-> Naviga  |  Spazio Avanti  |  Invio Chiudi poligono  |  Q Esci"
         help_line2 = (
-            "  Click Aggiungi punto  |  Ctrl+Z Annulla punto  |  D Elimina  |  Esc Annulla poligono"
+            "  Click Aggiungi punto  |  Backspace Annulla punto  |  D Elimina  |  "
+            "Esc Annulla poligono"
         )
         cv2.putText(
             frame, help_line1, (5, y_start + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1
@@ -319,26 +330,28 @@ class ManualReviewer:
         Parameters
         ----------
         key : int
-            Codice tasto restituito da cv2.waitKey.
+            Codice tasto grezzo restituito da cv2.waitKeyEx.
 
         Returns
         -------
         bool
             False se il loop deve terminare (tasto Q), True altrimenti.
         """
+        if key not in KEY_LEFT_CODES and key not in KEY_RIGHT_CODES:
+            key &= _KEYSYM_MASK
         # Q - Conferma e esci
         if key == ord("q") or key == ord("Q"):
             return False
 
         # Freccia destra o Spazio — Avanti
-        if key in (KEY_RIGHT, KEY_SPACE):
+        if key in KEY_RIGHT_CODES or key == KEY_SPACE:
             self.current_polygon_points = []
             self.delete_mode = False
             if self.current_frame_idx < self.total_frames - 1:
                 self.current_frame_idx += 1
 
         # Freccia sinistra — Indietro
-        elif key == KEY_LEFT:
+        elif key in KEY_LEFT_CODES:
             self.current_polygon_points = []
             self.delete_mode = False
             if self.current_frame_idx > 0:
@@ -356,8 +369,8 @@ class ManualReviewer:
                 self.stats["frames_modified"].add(self.current_frame_idx)
                 self.current_polygon_points = []
 
-        # Ctrl+Z — Annulla ultimo punto
-        elif key == KEY_CTRL_Z:
+        # Backspace o Ctrl+Z — Annulla ultimo punto
+        elif key == KEY_CTRL_Z or key in KEY_BACKSPACE_CODES:
             if self.current_polygon_points:
                 self.current_polygon_points.pop()
 
@@ -417,7 +430,7 @@ class ManualReviewer:
             display = self._render_display()
             cv2.imshow(window_name, display)
 
-            key = cv2.waitKey(30) & 0xFF
+            key = cv2.waitKeyEx(30)
 
             if key == KEY_NONE:
                 # Nessun tasto premuto

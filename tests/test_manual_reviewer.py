@@ -265,13 +265,42 @@ class TestHandleKey:
         reviewer._handle_key(KEY_RIGHT)
         assert reviewer.current_frame_idx == reviewer.total_frames - 1
 
-    def test_left_arrow_shadowed_by_quit(self, reviewer):
-        # KEY_LEFT = 81 = ord('Q') — il check Q viene prima nell'elif chain,
-        # quindi KEY_LEFT in pratica agisce come quit (return False)
+    # Raw cv2.waitKeyEx codes: X11 keysyms on the Qt/GTK backends, virtual-key
+    # codes shifted by 16 on Windows, NSEvent function keys on macOS.
+    @pytest.mark.parametrize("left_code", [0xFF51, 0x250000, 0xF702, 0x10FF51])
+    def test_left_arrow_goes_back_one_frame(self, reviewer, left_code):
         reviewer.current_frame_idx = 2
-        result = reviewer._handle_key(KEY_LEFT)
-        assert result is False  # esce dal loop (Q ha priorità)
-        assert reviewer.current_frame_idx == 2  # non cambia
+        result = reviewer._handle_key(left_code)
+        assert result is True
+        assert reviewer.current_frame_idx == 1
+
+    @pytest.mark.parametrize("right_code", [0xFF53, 0x270000, 0xF703, 0x10FF53])
+    def test_right_arrow_code_advances_on_every_backend(self, reviewer, right_code):
+        reviewer.current_frame_idx = 0
+        reviewer._handle_key(right_code)
+        assert reviewer.current_frame_idx == 1
+
+    def test_left_arrow_at_first_frame_stays(self, reviewer):
+        reviewer.current_frame_idx = 0
+        reviewer._handle_key(KEY_LEFT)
+        assert reviewer.current_frame_idx == 0
+
+    def test_uppercase_s_does_not_navigate(self, reviewer):
+        # 0xFF53 & 0xFF == ord("S"): the old masking turned S into "next frame"
+        reviewer.current_frame_idx = 0
+        reviewer._handle_key(ord("S"))
+        assert reviewer.current_frame_idx == 0
+
+    def test_q_with_modifier_bits_returns_false(self, reviewer):
+        # GTK reports modifier state (e.g. NumLock) in the upper 16 bits
+        assert reviewer._handle_key(0x100000 | ord("q")) is False
+
+    @pytest.mark.parametrize("backspace_code", [8, 0xFF08])
+    def test_backspace_removes_last_point(self, reviewer, backspace_code):
+        # The Qt backend swallows every Ctrl+key, so Ctrl+Z never arrives there
+        reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
+        reviewer._handle_key(backspace_code)
+        assert reviewer.current_polygon_points == [(0, 0), (10, 0)]
 
     def test_enter_adds_polygon_with_enough_points(self, reviewer):
         reviewer.current_polygon_points = [(0, 0), (10, 0), (5, 10)]
@@ -447,7 +476,7 @@ class TestManualReviewerRun:
             patch.object(
                 reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
             ),
-            patch("cv2.waitKey", side_effect=[KEY_NONE & 0xFF, ord("q") & 0xFF]),
+            patch("cv2.waitKeyEx", side_effect=[KEY_NONE, ord("q")]),
         ):
             annotations, stats = reviewer.run()
         assert isinstance(annotations, dict)
@@ -466,7 +495,7 @@ class TestManualReviewerRun:
             patch.object(
                 reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
             ),
-            patch("cv2.waitKey", return_value=ord("q") & 0xFF),
+            patch("cv2.waitKeyEx", return_value=ord("q")),
         ):
             annotations, _ = reviewer.run()
         assert 0 in annotations
@@ -481,7 +510,7 @@ class TestManualReviewerRun:
             patch.object(
                 reviewer, "_render_display", return_value=np.zeros((480, 640, 3), dtype=np.uint8)
             ),
-            patch("cv2.waitKey", return_value=ord("q") & 0xFF),
+            patch("cv2.waitKeyEx", return_value=ord("q")),
         ):
             reviewer.run()
         mock_destroy.assert_called_once()
