@@ -5,12 +5,15 @@ Mock di tutte le dipendenze esterne: cv2, YOLO, tracking, detection.
 """
 
 import threading
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.models import FisheyeContext, FrameProcessors
+from person_anonymizer.stage_detection import run_detection_loop
 
 
 def _make_config(**kwargs):
@@ -539,3 +542,267 @@ class TestRunDetectionLoop:
         # Assert — con 0 detection, contatori a zero
         assert stats["unique_ids"] == set()
         assert stats["total_instances"] == 0
+
+
+@pytest.fixture
+def detection_boundary() -> Iterator[MagicMock]:
+    with (
+        patch(
+            "person_anonymizer.stage_detection.enhance_frame", side_effect=lambda frame, *_: frame
+        ),
+        patch("person_anonymizer.stage_detection.run_full_detection") as detect,
+        patch("person_anonymizer.stage_detection.tqdm"),
+    ):
+        detect.return_value = ([], 0, 0)
+        yield detect
+
+
+def test_run_detection_loop_subframes_merge_virtual_and_real_boxes(
+    detection_boundary: MagicMock,
+) -> None:
+    # Arrange
+    config = _make_config(
+        enable_tracking=False,
+        enable_subframe_interpolation=True,
+        interpolation_fps_threshold=15,
+        person_padding=0,
+    )
+    frames = [
+        np.full(shape=(480, 640, 3), fill_value=value, dtype=np.uint8) for value in (0, 90, 180)
+    ]
+    cap = _make_cap(frames=frames, fps=5.0)
+    detection_boundary.side_effect = lambda _, frame, *args: (
+        [[100 + int(frame[0, 0, 0]), 100, 105 + int(frame[0, 0, 0]), 200, 0.9]],
+        2,
+        3,
+    )
+
+    # Act
+    annotations, report, stats = run_detection_loop(
+        cap=cap,
+        total_frames=3,
+        model=object(),
+        config=config,
+        fisheye=FisheyeContext(enabled=False),
+    )
+
+    # Assert
+    assert [int(call.args[1][0, 0, 0]) for call in detection_boundary.call_args_list] == [
+        0,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+    ]
+    assert [len(annotations[index]["auto"]) for index in range(3)] == [1, 3, 3]
+    assert sorted(poly[0][0] for poly in annotations[1]["auto"]) == [130, 160, 190]
+    assert report[1]["sliding_window_hits"] == 2
+    assert report[1]["multiscale_hits"] == 3
+    assert stats["total_instances"] == 7
+
+
+def test_run_detection_loop_subframe_duplicates_are_filtered_by_nms(
+    detection_boundary: MagicMock,
+) -> None:
+    # Arrange
+    config = _make_config(
+        enable_tracking=False,
+        enable_subframe_interpolation=True,
+        person_padding=0,
+        interpolation_fps_threshold=15,
+    )
+    cap = _make_cap(frames=[_make_frame(), _make_frame()], fps=5.0)
+    detection_boundary.side_effect = [
+        ([], 0, 0),
+        ([[100, 100, 200, 300, 0.6]], 0, 0),
+        ([[100, 100, 200, 300, 0.9]], 0, 0),
+        ([[300, 100, 400, 300, 0.8]], 0, 0),
+    ]
+
+    # Act
+    annotations, report, stats = run_detection_loop(
+        cap=cap,
+        total_frames=2,
+        model=object(),
+        config=config,
+        fisheye=FisheyeContext(enabled=False),
+    )
+
+    # Assert
+    assert annotations[1]["auto"] == [
+        [(100, 100), (200, 100), (200, 300), (100, 300)],
+        [(300, 100), (400, 100), (400, 300), (300, 300)],
+    ]
+    assert report[1]["persons_detected"] == 2
+    assert report[1]["min_confidence"] == 0.8
+    assert report[1]["max_confidence"] == 0.9
+    assert report[1]["avg_confidence"] == pytest.approx(0.85)
+    assert stats == {"unique_ids": {0, 1}, "total_instances": 2}
+    assert annotations[1]["intensities"] == [10, 10]
+
+
+def test_run_detection_loop_smoothing_detection_uses_shifted_polygon(
+    detection_boundary: MagicMock,
+) -> None:
+    # Arrange
+    config = _make_config(enable_temporal_smoothing=True, person_padding=0)
+    box = [100, 100, 200, 300, 0.9]
+    detection_boundary.return_value = ([box], 0, 0)
+    smoother = MagicMock()
+    smoother.smooth.return_value = (120, 130, 220, 330)
+    smoother.get_ghost_boxes.return_value = []
+    cap = _make_cap(frames=[_make_frame()])
+
+    # Act
+    with (
+        patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()),
+        patch("person_anonymizer.stage_detection.update_tracker", return_value=[(42, *box)]),
+        patch("person_anonymizer.stage_detection.TemporalSmoother", return_value=smoother),
+    ):
+        annotations, report, stats = run_detection_loop(
+            cap=cap,
+            total_frames=1,
+            model=object(),
+            config=config,
+            fisheye=FisheyeContext(enabled=False),
+        )
+
+    # Assert
+    assert annotations[0]["auto"] == [[(120, 130), (220, 130), (220, 330), (120, 330)]]
+    assert annotations[0]["intensities"] == [10]
+    assert report[0]["persons_detected"] == 1
+    assert report[0]["avg_confidence"] == 0.9
+    assert stats == {"unique_ids": {42}, "total_instances": 1}
+
+
+def test_run_detection_loop_oversized_box_clamps_polygon_and_intensity(
+    detection_boundary: MagicMock,
+) -> None:
+    # Arrange
+    config = _make_config(enable_tracking=False, enable_adaptive_intensity=True, person_padding=0)
+    cap = _make_cap(frames=[_make_frame()])
+    detection_boundary.return_value = ([[-5, -5, 700, 500, 0.8]], 0, 0)
+
+    # Act
+    annotations, report, _ = run_detection_loop(
+        cap=cap,
+        total_frames=1,
+        model=object(),
+        config=config,
+        fisheye=FisheyeContext(enabled=False),
+    )
+
+    # Assert
+    assert annotations[0]["auto"] == [[(0, 0), (640, 0), (640, 480), (0, 480)]]
+    assert annotations[0]["intensities"] == [120]
+    assert report[0]["persons_detected"] == 1
+
+
+def test_run_detection_loop_ghost_heights_keeps_only_positive_height(
+    detection_boundary: MagicMock,
+) -> None:
+    # Arrange
+    config = _make_config(
+        enable_temporal_smoothing=True, enable_adaptive_intensity=True, person_padding=0
+    )
+    smoother = MagicMock()
+    cap = _make_cap(frames=[_make_frame()])
+    smoother.get_ghost_boxes.return_value = [
+        (10, 10, 500, 50, 600),
+        (11, 10, 480, 50, 600),
+        (12, 10, 380, 50, 600),
+    ]
+
+    # Act
+    with (
+        patch("person_anonymizer.stage_detection.create_tracker", return_value=MagicMock()),
+        patch("person_anonymizer.stage_detection.update_tracker", return_value=[]),
+        patch("person_anonymizer.stage_detection.TemporalSmoother", return_value=smoother),
+    ):
+        annotations, report, stats = run_detection_loop(
+            cap=cap,
+            total_frames=1,
+            model=object(),
+            config=config,
+            fisheye=FisheyeContext(enabled=False),
+        )
+
+    # Assert
+    assert annotations[0]["auto"] == [[(10, 380), (50, 380), (50, 480), (10, 480)]]
+    assert annotations[0]["intensities"] == [25]
+    assert report[0]["persons_detected"] == 1
+    assert report[0]["avg_confidence"] == 0.0
+    assert stats == {"unique_ids": set(), "total_instances": 1}
+
+
+def test_run_detection_loop_repeated_tracks_counts_unique_ids_and_snapshots_summary(
+    detection_boundary: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Arrange
+    config = _make_config(person_padding=0)
+    box = [100, 100, 200, 300, 0.8]
+    detection_boundary.side_effect = [
+        ([box], 0, 0),
+        ([box, [300, 100, 400, 300, 0.6]], 0, 0),
+        ([], 0, 0),
+    ]
+    tracker = MagicMock()
+    tracker.update.side_effect = [[(7, *box)], [(7, *box), (9, 300, 100, 400, 300, 0.6)], []]
+    cap = _make_cap(frames=[_make_frame() for _ in range(3)])
+
+    # Act
+    with patch("person_anonymizer.stage_detection.create_tracker", return_value=tracker):
+        annotations, report, stats = run_detection_loop(
+            cap=cap,
+            total_frames=3,
+            model=object(),
+            config=config,
+            fisheye=FisheyeContext(enabled=False),
+        )
+
+    # Assert
+    assert stats == {"unique_ids": {7, 9}, "total_instances": 3}
+    assert [len(annotations[index]["auto"]) for index in range(3)] == [1, 2, 0]
+    assert report[1]["avg_confidence"] == pytest.approx(0.7)
+    assert capsys.readouterr().out == (
+        "\n[FASE 1/5] Rilevamento automatico...\n"
+        "\n  Persone tracciate (ID unici):   2\n"
+        "  Istanze totali rilevate:        3\n"
+        "  Frame con 0 rilevamenti:        1  (33.3%)\n"
+        "  Confidenza media:               0.73\n"
+    )
+
+
+def test_run_detection_loop_corrupt_middle_and_tail_preserves_frame_indices(
+    detection_boundary: MagicMock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Arrange
+    cap = _make_cap()
+    cap.read.side_effect = [
+        (True, _make_frame()),
+        (False, None),
+        (True, _make_frame()),
+        (False, None),
+    ]
+
+    # Act
+    annotations, report, stats = run_detection_loop(
+        cap=cap,
+        total_frames=4,
+        model=object(),
+        config=_make_config(enable_tracking=False),
+        fisheye=FisheyeContext(enabled=False),
+    )
+
+    # Assert
+    assert sorted(annotations) == [0, 2]
+    assert [row["frame_number"] for row in report.values()] == [0, 2]
+    assert stats == {"unique_ids": set(), "total_instances": 0}
+    assert cap.read.call_count == 4
+    assert detection_boundary.call_count == 2
+    assert "ATTENZIONE: 1 frame corrotti (saltati): [1]" in capsys.readouterr().out
+    cap.release.assert_called_once_with()
