@@ -255,3 +255,40 @@ def test_compute_adaptive_intensity_dominant_term_returns_exact_value(
     )
     # Assert
     assert result == expected
+
+
+@pytest.mark.skipif(not CV2_AVAILABLE, reason="cv2 non disponibile")
+class TestObscurePolygonOutsideFrame:
+    """Polygons that fall outside the frame (e.g. annotations from a larger video)."""
+
+    @pytest.mark.parametrize(
+        "points",
+        [
+            [(110, 10), (130, 10), (130, 50), (110, 50)],
+            [(10, 110), (50, 110), (50, 130), (10, 130)],
+            [(100, 10), (120, 10), (120, 50), (100, 50)],
+            [(-30, 10), (-10, 10), (-10, 50), (-30, 50)],
+        ],
+        ids=["past_right", "past_bottom", "on_right_border", "past_left"],
+    )
+    def test_obscure_polygon_entirely_outside_frame_leaves_frame_unchanged(self, points):
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
+        original = frame.copy()
+
+        result = obscure_polygon(frame=frame, points=points, method="pixelation", intensity=10)
+
+        np.testing.assert_array_equal(result, original)
+
+    def test_obscure_polygon_partly_outside_frame_obscures_visible_part(self):
+        frame = np.random.default_rng(0).integers(0, 256, (100, 100, 3), dtype=np.uint8)
+        original = frame.copy()
+
+        obscure_polygon(
+            frame=frame,
+            points=[(80, 10), (130, 10), (130, 50), (80, 50)],
+            method="blur",
+            intensity=11,
+        )
+
+        assert np.any(frame[10:50, 80:100] != original[10:50, 80:100])
+        np.testing.assert_array_equal(frame[:, :80], original[:, :80])

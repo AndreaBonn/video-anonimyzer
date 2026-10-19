@@ -93,7 +93,8 @@ def obscure_polygon(frame, points, method, intensity):
     w = min(w, frame.shape[1] - x)
     h = min(h, frame.shape[0] - y)
 
-    if w == 0 or h == 0:
+    # Negative once clamped when the polygon lies entirely past the right/bottom edge
+    if w <= 0 or h <= 0:
         return frame
 
     if method == "pixelation":
