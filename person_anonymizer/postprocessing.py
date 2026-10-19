@@ -96,6 +96,33 @@ def encode_without_audio(video_no_audio, output_path):
         shutil.copy(video_no_audio, output_path)
 
 
+def _detect_frame_at_scales(model, frame, scales, confidence) -> list:
+    """
+    Detect persons in one frame at each scale, returning boxes in frame coordinates.
+
+    Scale 1.0 runs the model on the frame as is; other scales resize with
+    INTER_CUBIC and map the boxes back through ``detect_and_rescale``.
+
+    Returns
+    -------
+    list of list
+        Boxes ``[x1, y1, x2, y2, conf]``, not yet merged across scales.
+    """
+    height, width = frame.shape[:2]
+    all_boxes = []
+    for scale in scales:
+        if scale == 1.0:
+            results = model(frame, conf=confidence, classes=[0], verbose=False)
+            for box in results[0].boxes:
+                x1, y1, x2, y2 = map(float, box.xyxy[0])
+                all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
+        else:
+            new_size = (int(width * scale), int(height * scale))
+            scaled = cv2.resize(frame, new_size, interpolation=cv2.INTER_CUBIC)
+            all_boxes.extend(detect_and_rescale(model, scaled, confidence, scale))
+    return all_boxes
+
+
 def run_post_render_check(
     anonymized_video_path, model, confidence, report_data, config: PipelineConfig, check_scales=None
 ):
@@ -131,8 +158,6 @@ def run_post_render_check(
 
     cap = cv2.VideoCapture(anonymized_video_path)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     alert_frames = []
     frame_idx = 0
 
@@ -143,19 +168,7 @@ def run_post_render_check(
             if not ret:
                 break
 
-            all_boxes = []
-            for scale in check_scales:
-                if scale == 1.0:
-                    results = model(frame, conf=confidence, classes=[0], verbose=False)
-                    for box in results[0].boxes:
-                        x1, y1, x2, y2 = map(float, box.xyxy[0])
-                        all_boxes.append([x1, y1, x2, y2, float(box.conf[0])])
-                else:
-                    new_w = int(frame_w * scale)
-                    new_h = int(frame_h * scale)
-                    scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-                    boxes = detect_and_rescale(model, scaled, confidence, scale)
-                    all_boxes.extend(boxes)
+            all_boxes = _detect_frame_at_scales(model, frame, check_scales, confidence)
 
             nms_boxes = apply_nms(all_boxes, config.nms_iou_threshold)
 

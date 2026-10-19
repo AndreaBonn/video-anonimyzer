@@ -8,11 +8,13 @@ Mock: ffmpeg, cv2.VideoCapture, shutil.copy.
 
 from unittest.mock import MagicMock, patch
 
+import cv2
 import numpy as np
 import pytest
 
 from person_anonymizer.config import PipelineConfig
 from person_anonymizer.postprocessing import (
+    _detect_frame_at_scales,
     encode_with_audio,
     encode_without_audio,
     run_post_render_check,
@@ -338,3 +340,107 @@ class TestRunPostRenderCheck:
 
         # Assert — cap.release() chiamato nel finally
         cap_mock.release.assert_called()
+
+
+# ============================================================
+# _detect_frame_at_scales / run_post_render_check scale handling
+# ============================================================
+
+
+def _model_with_box(coords=(10.0, 10.0, 50.0, 50.0), conf=0.9):
+    fake_box = MagicMock()
+    fake_box.xyxy = [np.array(coords)]
+    fake_box.conf = [conf]
+    model = MagicMock()
+    model.return_value = [MagicMock(boxes=[fake_box])]
+    return model
+
+
+class TestDetectFrameAtScales:
+    """Verifica la detection multi-scala di un singolo frame."""
+
+    def test_scale_one_calls_model_directly_without_resize(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        model = _model_with_box()
+
+        with patch("person_anonymizer.postprocessing.cv2.resize") as mock_resize:
+            boxes = _detect_frame_at_scales(model, frame, [1.0], 0.4)
+
+        mock_resize.assert_not_called()
+        model.assert_called_once_with(frame, conf=0.4, classes=[0], verbose=False)
+        assert boxes == [[10.0, 10.0, 50.0, 50.0, 0.9]]
+
+    def test_scale_two_resizes_to_double_size_and_uses_detect_and_rescale(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        scaled = np.zeros((160, 200, 3), dtype=np.uint8)
+        model = MagicMock()
+
+        with (
+            patch(
+                "person_anonymizer.postprocessing.cv2.resize", return_value=scaled
+            ) as mock_resize,
+            patch(
+                "person_anonymizer.postprocessing.detect_and_rescale",
+                return_value=[[1.0, 2.0, 3.0, 4.0, 0.7]],
+            ) as mock_rescale,
+        ):
+            boxes = _detect_frame_at_scales(model, frame, [2.0], 0.4)
+
+        mock_resize.assert_called_once()
+        assert mock_resize.call_args.args == (frame, (200, 160))
+        assert mock_resize.call_args.kwargs == {"interpolation": cv2.INTER_CUBIC}
+        mock_rescale.assert_called_once_with(model, scaled, 0.4, 2.0)
+        model.assert_not_called()
+        assert boxes == [[1.0, 2.0, 3.0, 4.0, 0.7]]
+
+    def test_boxes_from_all_scales_are_concatenated_in_scale_order(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        model = _model_with_box()
+
+        with (
+            patch("person_anonymizer.postprocessing.cv2.resize", return_value=frame),
+            patch(
+                "person_anonymizer.postprocessing.detect_and_rescale",
+                return_value=[[5.0, 5.0, 6.0, 6.0, 0.5]],
+            ),
+        ):
+            boxes = _detect_frame_at_scales(model, frame, [1.0, 2.0], 0.4)
+
+        assert boxes == [[10.0, 10.0, 50.0, 50.0, 0.9], [5.0, 5.0, 6.0, 6.0, 0.5]]
+
+    def test_no_scales_returns_empty_list(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+
+        assert _detect_frame_at_scales(MagicMock(), frame, [], 0.4) == []
+
+
+class TestRunPostRenderCheckReportData:
+    """report_data viene aggiornato solo per i frame con detection presenti in report."""
+
+    def test_report_updated_only_for_frames_present_in_report_data(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        cap = MagicMock()
+        cap.get.side_effect = lambda prop: {7: 2}.get(prop, 0)
+        cap.read.side_effect = [(True, frame), (True, frame), (False, None)]
+        report_data = {1: {"detections": 0}}
+
+        with (
+            patch("person_anonymizer.postprocessing.cv2.VideoCapture", return_value=cap),
+            patch("person_anonymizer.postprocessing.tqdm", return_value=MagicMock()),
+            patch(
+                "person_anonymizer.postprocessing.apply_nms",
+                return_value=[[10.0, 10.0, 50.0, 50.0, 0.9]],
+            ),
+        ):
+            alerts = run_post_render_check(
+                "video.avi",
+                _model_with_box(),
+                0.5,
+                report_data,
+                PipelineConfig(),
+                check_scales=[1.0],
+            )
+
+        assert [a[0] for a in alerts] == [0, 1]
+        assert report_data == {1: {"detections": 0, "post_check_alerts": 1}}
+        cap.release.assert_called_once()
