@@ -248,12 +248,16 @@ body {
 .card-body {
     overflow: visible;
     max-height: 800px;
-    transition: max-height var(--transition-slow), opacity var(--transition-slow);
+    /* visibility is discrete: it flips at the end of a collapse and at the start of an expand */
+    transition: max-height var(--transition-slow), opacity var(--transition-slow), visibility var(--transition-slow);
     opacity: 1;
+    visibility: visible;
 }
+/* visibility, not just opacity: hidden controls must leave the tab order */
 .card-body.collapsed-body {
     max-height: 0;
     opacity: 0;
+    visibility: hidden;
     overflow: hidden;
     margin: 0;
     padding: 0;
