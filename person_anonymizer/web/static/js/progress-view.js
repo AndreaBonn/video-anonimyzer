@@ -57,6 +57,13 @@ const ProgressView = (function () {
         renderPhases();
     }
 
+    /** Shows the progress of a job started elsewhere: its settings are unknown, so nothing is marked skipped. */
+    function resume() {
+        reset();
+        $("#progressContainer").classList.remove("hidden");
+        renderPhases();
+    }
+
     function setPhase(num) {
         currentPhase = num;
         // La revisione aspetta l'utente: nessuna barra da riempire
@@ -118,5 +125,5 @@ const ProgressView = (function () {
         if (currentPhase > 0 && currentPhase !== Infinity) renderPhases();
     });
 
-    return { reset, start, setPhase, update, complete, fail, requestNotifications };
+    return { reset, start, resume, setPhase, update, complete, fail, requestNotifications };
 })();

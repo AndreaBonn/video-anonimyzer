@@ -96,6 +96,8 @@ const I18N_TEXT_RUN = {
 
     // --- Messaggi della pipeline ---
     "pipeline.starting": { it: "Avvio pipeline...", en: "Starting pipeline..." },
+    "pipeline.reattached": { it: "C'è un'elaborazione in corso: la riprendo da qui. Puoi seguirla o interromperla.", en: "A processing job is running: picking it up here. You can follow or stop it." },
+    "pipeline.reattach.failed": { it: "Non riesco a controllare se c'è un'elaborazione in corso.", en: "Could not check whether a processing job is running." },
     "pipeline.started": { it: "Pipeline avviata", en: "Pipeline started" },
     "pipeline.completed": { it: "Fatto: il video anonimizzato è pronto.", en: "Done: the anonymized video is ready." },
     "pipeline.error.start": { it: "Errore avvio: {0}", en: "Start error: {0}" },

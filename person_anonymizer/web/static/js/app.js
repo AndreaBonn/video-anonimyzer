@@ -220,8 +220,9 @@
     function updateStartButton() {
         btnStart.disabled = !videoFilename || running;
         $("#startHint").classList.toggle("hidden", Boolean(videoFilename) || running);
-        jsonFileInput.disabled = !jobId;
-        $("#jsonNeedsVideo").classList.toggle("hidden", Boolean(jobId));
+        // The JSON belongs to the uploaded video: a reattached job has a jobId but no video
+        jsonFileInput.disabled = !jobId || !videoFilename;
+        $("#jsonNeedsVideo").classList.toggle("hidden", Boolean(jobId && videoFilename));
     }
 
     function setRunning(isRunning) {
@@ -421,6 +422,59 @@
         updateConsoleCount();
     });
 
+    /**
+     * After a reload the server may still be running a job this page no longer
+     * knows: without reattaching, Stop is hidden and every new start gets a 409.
+     * Progress resumes from the next event; earlier ones are not replayed.
+     */
+    const REATTACH_RECHECK_MS = 2000;
+    const REATTACH_GRACE_MS = 1000;
+
+    function reattachRunningJob() {
+        fetch("/api/status")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((status) => {
+                // An upload made before this answer owns jobId: do not swap its video for the old job
+                if (!status || !status.running || !status.job_id || running || jobId) return;
+                jobId = status.job_id;
+                ProgressView.resume();
+                ResultsView.hide();
+                setWelcomeVisible(false);
+                setRunning(true);
+                setHeaderStatus("processing", "status.processing");
+                appendLog(t("pipeline.reattached"), "phase");
+                showToast(t("pipeline.reattached"), "info", 8000);
+                connectSSE(jobId);
+                // A job that ended between the status call and the subscription sends no more
+                // events, and the stream sends its first byte only with the 60 s heartbeat
+                setTimeout(recheckReattachedJob, REATTACH_RECHECK_MS);
+                return fetch("/api/review/status")
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((review) => {
+                        if (!review || !review.active) return;
+                        ProgressView.setPhase(3);
+                        ReviewEditor.init(review);
+                    });
+            })
+            .catch(() => appendLog(t("pipeline.reattach.failed"), "error"));
+    }
+
+    function recheckReattachedJob() {
+        fetch("/api/status")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((status) => {
+                if (!status || status.running) return;
+                // A completed/stopped event may still be in flight: let the stream handle it
+                setTimeout(() => {
+                    if (!running) return;
+                    setHeaderStatus("ready", "status.ready");
+                    ProgressView.reset();
+                    onPipelineEnd();
+                }, REATTACH_GRACE_MS);
+            })
+            .catch(() => appendLog(t("pipeline.reattach.failed"), "error"));
+    }
+
     // === Init ===
     HelpTooltip.init();
     SettingsUI.init();
@@ -429,6 +483,7 @@
     updateStartButton();
     updateConsoleCount();
     document.addEventListener("i18n:applied", updateConsoleCount);
+    reattachRunningJob();
 
     const frameSlider = $("#frameSlider");
     frameSlider.addEventListener("input", () => SettingsUI.updateSliderFill(frameSlider));
