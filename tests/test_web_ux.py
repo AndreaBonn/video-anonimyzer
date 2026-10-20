@@ -326,3 +326,12 @@ def test_video_info_nan_metadata_returns_nulls(tmp_path):
         info = read_video_info(tmp_path / "x.mp4")
 
     assert info == {"duration_s": None, "width": None, "height": None}
+
+
+def test_index_declares_favicon_that_is_served(client):
+    html = client.get("/").get_data(as_text=True)
+
+    assert '<link rel="icon" href="/static/favicon.svg"' in html
+    icon = client.get("/static/favicon.svg")
+    assert icon.status_code == 200
+    assert icon.mimetype == "image/svg+xml"
