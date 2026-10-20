@@ -12,7 +12,7 @@ const I18N_TEXT_RUN = {
     "phase.check": { it: "Controllo automatico", en: "Automatic check" },
     "phase.review": { it: "Revisione", en: "Review" },
     "phase.rendering": { it: "Creazione video", en: "Creating video" },
-    "phase.finalize": { it: "Finalizzazione", en: "Finishing" },
+    "phase.finalize": { it: "Finaliz\u00ADzazione", en: "Finishing" },
     "phase.skipped": { it: "saltata", en: "skipped" },
     "phase.plain.0": { it: "Preparazione in corso", en: "Getting ready" },
     "phase.plain.1": { it: "Sto cercando le persone nel video", en: "Looking for people in the video" },
