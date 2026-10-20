@@ -35,6 +35,7 @@ e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
   - `web/` — Interfaccia web Flask con Blueprint
     - `app.py` — Bootstrap, route di upload/start/stop/status, stream SSE, thread di cleanup "cleanup"
     - `upload_validation.py` — Firma magic bytes, parsing JSON annotazioni, path dei file di job
+    - `video_info.py` — Durata e risoluzione del video caricato, mostrate nella scheda di upload
     - `job_cleanup.py` — Selezione e rimozione dei job scaduti (orologio iniettato)
     - `sse_stream.py` — Formato eventi SSE e generatore heartbeat/timeout
     - `extensions.py` — Limiter e helper condivisi
@@ -46,7 +47,7 @@ e interfaccia web Flask. SAM3 è opzionale — YOLO resta il default.
     - `pipeline_runner.py` — Thread wrapper per run_pipeline
     - `sse_manager.py` — Server-Sent Events manager
     - `review_state.py` — Stato review thread-safe
-- `tests/` — Test suite (pytest, 1158 test, coverage riga+ramo 98%); i file `*_characterization.py` fissano il comportamento pubblico prima dei refactor
+- `tests/` — Test suite (pytest, 1161 test, coverage riga+ramo 98%); i file `*_characterization.py` fissano il comportamento pubblico prima dei refactor
 - `reports/` — Report di audit (code roast, security, architecture)
 - `requirements.txt` — Dipendenze produzione pinnate
 - `requirements-dev.txt` — Dipendenze sviluppo (pytest, ruff)

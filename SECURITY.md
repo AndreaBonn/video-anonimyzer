@@ -15,7 +15,9 @@ If you discover a security vulnerability, please report it responsibly by openin
 - **File Upload Validation**: Extension whitelist + magic bytes verification
 - **Input Validation**: All configuration parameters validated with type and range checks; annotation coordinates bounded
 - **File Size Limits**: 2 GB max upload, 100 MB max JSON
-- **Automatic Cleanup**: Temporary files removed after 1 hour
+- **Automatic Cleanup**: Temporary files removed after 1 hour; a cleanup failure is logged, not swallowed
+- **Log Sanitization**: Log lines streamed to the browser have every absolute path reduced to the file name
+- **Single Job**: One pipeline runs at a time; a second start is rejected with `409`
 
 ### Secret Management
 
