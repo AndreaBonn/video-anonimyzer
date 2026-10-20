@@ -21,6 +21,10 @@ const ReviewEditor = (function () {
     // Only the latest frame request may draw: responses can arrive out of order.
     let frameRequestSeq = 0;
     let frameReady = false;
+    // Without the server's annotations an edit would overwrite the frame's auto areas
+    let annotationsLoaded = false;
+    let confirming = false;
+    let initSeq = 0;
     let metadata = null;         // {total_frames, frame_w, frame_h, fps}
     let annotations = {};        // {frame_idx_str: {auto:[], manual:[], intensities:[]}}
     let currentFrame = 0;
@@ -54,6 +58,8 @@ const ReviewEditor = (function () {
         annotations = {};
         addedCount = 0;
         deletedCount = 0;
+        annotationsLoaded = false;
+        confirming = false;
         active = true;
 
         canvas = document.getElementById("reviewCanvas");
@@ -76,11 +82,23 @@ const ReviewEditor = (function () {
         reviewCard.scrollIntoView({ block: "start" });
         updateSummary();
 
+        const mySeq = ++initSeq;
         fetch("/api/review/annotations")
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+            })
             .then(function (data) {
+                // review_ready and a reattach can both open the editor: the older load must not reset the newer
+                if (mySeq !== initSeq) return;
+                ReviewSync.reset(data);
                 annotations = data;
+                annotationsLoaded = true;
                 loadFrame(0);
+            })
+            .catch(function () {
+                if (mySeq !== initSeq) return;
+                UI.showToast(t("review.load.error"), "error");
             });
 
         bindControlsOnce();
@@ -108,6 +126,7 @@ const ReviewEditor = (function () {
     // Caricamento frame
     // ============================
     function loadFrame(idx) {
+        if (!annotationsLoaded) return;
         if (idx < 0 || idx >= metadata.total_frames) return;
         currentFrame = idx;
         frameSlider.value = idx;
@@ -237,21 +256,23 @@ const ReviewEditor = (function () {
         return Boolean(fdata) && ((fdata.auto || []).length + (fdata.manual || []).length) > 0;
     }
 
-    function saveFrameAnnotations() {
-        const key = String(currentFrame);
-        const fdata = annotations[key] || { auto: [], manual: [], intensities: [] };
-        fetch("/api/review/annotations/" + currentFrame, {
-            method: "PUT",
-            headers: Object.assign({ "Content-Type": "application/json" }, UI.CSRF_HEADER),
-            body: JSON.stringify(fdata),
-        });
+    /** Persist the current frame; ReviewSync undoes the edit if the server rejects it. */
+    function saveFrameAnnotations(undoCounter) {
+        ReviewSync.save(currentFrame, getFrameAnnotations(currentFrame), undoCounter, onSaveRollback);
+    }
+
+    function onSaveRollback(key, serverState) {
+        annotations[key] = serverState;
+        updateSummary();
+        if (String(currentFrame) === key) render();
+        UI.showToast(t("review.save.error"), "error");
     }
 
     // ============================
     // Azioni
     // ============================
     function closePolygon() {
-        if (!active) return;
+        if (!active || confirming) return;
         if (drawingPoints.length < MIN_POLYGON_POINTS) {
             UI.showToast(t("review.close.need_points"), "info");
             return;
@@ -259,7 +280,7 @@ const ReviewEditor = (function () {
         getFrameAnnotations(currentFrame).manual.push(drawingPoints.slice());
         drawingPoints = [];
         addedCount++;
-        saveFrameAnnotations();
+        saveFrameAnnotations(function () { addedCount--; });
         updateSummary();
         render();
     }
@@ -294,7 +315,8 @@ const ReviewEditor = (function () {
     // Event handlers
     // ============================
     function onCanvasClick(e) {
-        if (!active || !frameReady) return;
+        // No edits once Confirm is pressed: they would reach the server after the render started
+        if (!active || !frameReady || confirming) return;
         const rect = canvas.getBoundingClientRect();
         // Il canvas è scalato via CSS: riporta il click alle coordinate del bitmap
         const x = (e.clientX - rect.left) * (canvas.width / rect.width);
@@ -365,12 +387,28 @@ const ReviewEditor = (function () {
     }
 
     function onConfirm() {
-        if (!active) return;
-        fetch("/api/review/confirm", { method: "POST", headers: UI.CSRF_HEADER })
-            .then(function (r) { return r.json(); })
-            .then(function () {
-                deactivate();
-            });
+        if (!active || confirming) return;
+        if (!annotationsLoaded) {
+            UI.showToast(t("review.load.error"), "error");
+            return;
+        }
+        confirming = true;
+        // Saves still in flight must land before the pipeline renders from the server's copy
+        ReviewSync.settle()
+            .then(function (allSaved) {
+                // A rejected save was rolled back and announced: let the user redo it first
+                if (!allSaved) return;
+                return fetch("/api/review/confirm", { method: "POST", headers: UI.CSRF_HEADER })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error("HTTP " + r.status);
+                        deactivate();
+                    })
+                    .catch(function () {
+                        // The pipeline is still waiting: keep the editor so the user can retry
+                        UI.showToast(t("review.confirm.error"), "error");
+                    });
+            })
+            .then(function () { confirming = false; });
     }
 
     // ============================
@@ -428,7 +466,7 @@ const ReviewEditor = (function () {
 
         if (modified) {
             deletedCount++;
-            saveFrameAnnotations();
+            saveFrameAnnotations(function () { deletedCount--; });
             updateSummary();
             render();
         }
@@ -476,6 +514,7 @@ const ReviewEditor = (function () {
         // Chiamata anche a fine pipeline (stop/errore) quando nessuna revisione è stata aperta
         if (!canvas) return;
         active = false;
+        initSeq++;  // an annotations load still in flight must not reopen a closed editor
         canvas.removeEventListener("click", onCanvasClick);
         document.removeEventListener("keydown", onKeyDown);
         document.getElementById("reviewCard").classList.add("hidden");
