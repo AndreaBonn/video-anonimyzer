@@ -538,6 +538,44 @@ def test_run_requested_stop_emits_single_stopped_then_close(
     assert runner._current_job_id is None
 
 
+@pytest.mark.parametrize(
+    ("normalize", "expects_browser_review"),
+    [(False, True), (True, False)],
+)
+def test_run_resume_from_json_assigns_browser_review_unless_normalized(
+    runner: PipelineRunner,
+    mock_sse: MagicMock,
+    pipeline_boundary: MagicMock,
+    normalize: bool,
+    expects_browser_review: bool,
+) -> None:
+    # Arrange: loading a JSON forces manual review in the pipeline even when the
+    # form says "auto"; without the browser context it opened an OpenCV window
+    # on the server and the web job hung.
+    contexts = []
+    pipeline_boundary.side_effect = lambda ctx, **kwargs: (
+        contexts.append(ctx) or PostCheckOutcome(status="clean")
+    )
+    runner._current_job_id = "characterization"
+
+    # Act
+    runner._run(
+        job_id="characterization",
+        video_path="/input/video.mp4",
+        config_dict={**MINIMAL_CONFIG, "operation_mode": "auto", "normalize": normalize},
+        review_json="/input/video_annotations.json",
+    )
+
+    # Assert
+    (ctx,) = contexts
+    if expects_browser_review:
+        assert ctx.review_state is runner.review_state
+        assert ctx.sse_manager is mock_sse
+        assert ctx.job_id == "characterization"
+    else:
+        assert ctx.review_state is None
+
+
 def test_run_manual_and_auto_modes_assign_review_context_only_in_manual(
     runner: PipelineRunner,
     mock_sse: MagicMock,

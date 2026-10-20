@@ -49,7 +49,9 @@ const ProgressView = (function () {
     /** Segna le fasi che questa configurazione non eseguirà. */
     function start(config, resumedFromJson) {
         reset();
-        if (config.operation_mode === "auto") skipped.add(PHASE_REVIEW);
+        // A saved JSON always reopens the review, unless it is normalized to rectangles
+        const resumesIntoReview = resumedFromJson && !config.normalize;
+        if (config.operation_mode === "auto" && !resumesIntoReview) skipped.add(PHASE_REVIEW);
         if (!config.enable_post_render_check || resumedFromJson) skipped.add(PHASE_CHECK);
         $("#progressContainer").classList.remove("hidden");
         renderPhases();

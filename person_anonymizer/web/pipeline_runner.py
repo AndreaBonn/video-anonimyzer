@@ -177,7 +177,7 @@ class PipelineRunner:
     def _build_context(
         self, job: _JobRequest, config: PipelineConfig, output_path: str
     ) -> PipelineContext:
-        """Build the pipeline context; manual mode also gets the review state and SSE."""
+        """Build the pipeline context; manual mode or a JSON resume also gets review and SSE."""
         ctx = PipelineContext(
             input=job.video_path,
             mode=config.operation_mode,
@@ -189,7 +189,11 @@ class PipelineRunner:
             normalize=job.config_dict.get("normalize", False),
             stop_event=self._stop_event,
         )
-        if config.operation_mode == "manual":
+        # A saved JSON forces manual review in the pipeline (unless normalized
+        # to rectangles): without these the review falls back to an OpenCV window
+        # on the server and the web job never ends.
+        resumes_into_review = bool(job.review_json) and not ctx.normalize
+        if config.operation_mode == "manual" or resumes_into_review:
             ctx.review_state = self.review_state
             ctx.sse_manager = self._sse
             ctx.job_id = job.job_id
