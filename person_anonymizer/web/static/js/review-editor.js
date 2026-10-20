@@ -18,6 +18,9 @@ const ReviewEditor = (function () {
     // --- Stato ---
     let canvas, ctx;
     let frameImg = new Image();
+    // Only the latest frame request may draw: responses can arrive out of order.
+    let frameRequestSeq = 0;
+    let frameReady = false;
     let metadata = null;         // {total_frames, frame_w, frame_h, fps}
     let annotations = {};        // {frame_idx_str: {auto:[], manual:[], intensities:[]}}
     let currentFrame = 0;
@@ -55,6 +58,10 @@ const ReviewEditor = (function () {
 
         canvas = document.getElementById("reviewCanvas");
         ctx = canvas.getContext("2d");
+        // A new session invalidates loads still in flight from the previous one
+        frameRequestSeq++;
+        frameReady = false;
+        render();
         frameSlider = document.getElementById("frameSlider");
         frameLabel = document.getElementById("frameLabel");
         polyCount = document.getElementById("polyCount");
@@ -106,20 +113,42 @@ const ReviewEditor = (function () {
         frameSlider.value = idx;
         updateInfoBar();
 
+        // Until the new image is in, the canvas stays blank and ignores clicks:
+        // annotations must never be drawn or edited over another frame's image.
+        const seq = ++frameRequestSeq;
+        frameReady = false;
+        render();
+
+        let nextScale = 1.0;
         fetch("/api/review/frame/" + idx)
             .then(function (r) {
-                scaleFactor = parseFloat(r.headers.get("X-Scale-Factor") || "1");
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                nextScale = parseFloat(r.headers.get("X-Scale-Factor") || "1");
                 return r.blob();
             })
             .then(function (blob) {
+                if (seq !== frameRequestSeq) return;
                 const url = URL.createObjectURL(blob);
-                frameImg.onload = function () {
-                    canvas.width = frameImg.width;
-                    canvas.height = frameImg.height;
-                    render();
+                const img = new Image();
+                img.onload = function () {
                     URL.revokeObjectURL(url);
+                    if (seq !== frameRequestSeq) return;
+                    frameImg = img;
+                    scaleFactor = nextScale;
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    frameReady = true;
+                    render();
                 };
-                frameImg.src = url;
+                img.onerror = function () {
+                    URL.revokeObjectURL(url);
+                    if (seq === frameRequestSeq) UI.showToast(t("review.frame.error"), "error");
+                };
+                img.src = url;
+            })
+            .catch(function () {
+                if (seq !== frameRequestSeq) return;
+                UI.showToast(t("review.frame.error"), "error");
             });
     }
 
@@ -128,6 +157,7 @@ const ReviewEditor = (function () {
     // ============================
     function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!frameReady) return;
         ctx.drawImage(frameImg, 0, 0);
 
         const fdata = getFrameAnnotations(currentFrame);
@@ -264,7 +294,7 @@ const ReviewEditor = (function () {
     // Event handlers
     // ============================
     function onCanvasClick(e) {
-        if (!active) return;
+        if (!active || !frameReady) return;
         const rect = canvas.getBoundingClientRect();
         // Il canvas è scalato via CSS: riporta il click alle coordinate del bitmap
         const x = (e.clientX - rect.left) * (canvas.width / rect.width);

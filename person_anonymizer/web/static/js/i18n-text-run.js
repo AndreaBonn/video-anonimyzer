@@ -49,6 +49,7 @@ const I18N_TEXT_RUN = {
     "review.slider.aria": { it: "Posizione nel video", en: "Position in the video" },
     "review.next_people": { it: "Vai al prossimo frame con persone", en: "Go to the next frame with people" },
     "review.no_more_people": { it: "Nessun altro frame con persone dopo questo.", en: "No more frames with people after this one." },
+    "review.frame.error": { it: "Non riesco a caricare questo frame. Aspetta qualche secondo e torna sul frame per riprovare.", en: "This frame could not be loaded. Wait a few seconds and go back to the frame to retry." },
     "review.close.need_points": { it: "Servono almeno 3 punti per chiudere un'area: clicca sull'immagine attorno alla persona.", en: "At least 3 points are needed to close an area: click on the image around the person." },
     "review.help.click": { it: "aggiungi punto", en: "add point" },
     "review.help.enter": { it: "chiudi area", en: "close area" },
