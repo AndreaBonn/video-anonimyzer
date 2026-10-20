@@ -8,6 +8,8 @@ const HelpTooltip = (function () {
     const MARGIN = 8;
     let tooltip = null;
     let activeBtn = null;
+    // Opened by click/tap: survives mouseout. Opened by hover: closes on mouseout.
+    let pinned = false;
 
     function show(btn) {
         const text = btn.getAttribute("data-help");
@@ -45,6 +47,7 @@ const HelpTooltip = (function () {
     function hide() {
         tooltip.classList.remove("visible");
         tooltip.setAttribute("aria-hidden", "true");
+        pinned = false;
         if (activeBtn) {
             activeBtn.classList.remove("active");
             activeBtn.removeAttribute("aria-describedby");
@@ -64,9 +67,13 @@ const HelpTooltip = (function () {
             }
             e.preventDefault();
             e.stopPropagation();
-            const wasActive = activeBtn === btn;
+            // Hover (or the mouseover emulated by a tap) already showed it: the click pins it
+            // instead of toggling it off, otherwise the help would never stay open on touch.
+            const wasPinned = activeBtn === btn && pinned;
             hide();
-            if (!wasActive) show(btn);
+            if (wasPinned) return;
+            show(btn);
+            pinned = true;
         });
 
         // Hover support (desktop)
@@ -79,7 +86,7 @@ const HelpTooltip = (function () {
         });
         document.addEventListener("mouseout", (e) => {
             const btn = e.target.closest(".help-btn");
-            if (btn && activeBtn === btn) hide();
+            if (btn && activeBtn === btn && !pinned) hide();
         });
         document.addEventListener("keydown", (e) => {
             if (e.key === "Escape") hide();
